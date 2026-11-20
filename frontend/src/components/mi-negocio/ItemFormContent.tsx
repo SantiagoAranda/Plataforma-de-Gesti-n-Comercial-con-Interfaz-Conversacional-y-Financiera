@@ -1,5 +1,5 @@
 "use client";
-import { ItemCatalogAttributes } from "@/src/types/item";
+import { Item, ItemCatalogAttributes } from "@/src/types/item";
 import { ItemCatalogFields } from "./ItemCatalogFields";
 
 
@@ -223,6 +223,8 @@ interface ItemFormContentProps {
   catalog: ItemCatalogAttributes;
   setCatalog: (value: ItemCatalogAttributes) => void;
   catalogError: string | null;
+  /** Saved items of the active business, source of «Usadas recientemente». */
+  recentItems?: Item[];
   priceValue: number | null;
   durationMinutesInput: string;
   setDurationMinutesInput: (value: string) => void;
@@ -839,7 +841,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
         </div>
       </div>
       <ItemCatalogFields value={props.catalog} onChange={props.setCatalog} name={name}
-        price={props.priceValue} type={type} error={props.catalogError} />
+        price={props.priceValue} type={type} error={props.catalogError} recentItems={props.recentItems} />
       </div>
       </div>
     </div>

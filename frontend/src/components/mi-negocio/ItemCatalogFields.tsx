@@ -1,7 +1,7 @@
 "use client";
 import { useId, useState } from "react";
 import { Eye, EyeOff, FileText, Tag, Trash2, WandSparkles, type LucideIcon } from "lucide-react";
-import { ItemCatalogAttributes, ItemType } from "@/src/types/item";
+import { Item, ItemCatalogAttributes, ItemType } from "@/src/types/item";
 import { publicPriceLabel } from "@/src/lib/publicCatalog";
 import { isValidBarcode } from "@/src/lib/itemForm";
 import { ItemCategoryPicker } from "./ItemCategoryPicker";
@@ -29,9 +29,9 @@ function SwitchRow({ icon: Icon, title, hint, checked, onChange, strong = false 
   </label>;
 }
 
-export function ItemCatalogFields({ value, onChange, name, price, type, error }: {
+export function ItemCatalogFields({ value, onChange, name, price, type, error, recentItems }: {
   value: ItemCatalogAttributes; onChange: (value: ItemCatalogAttributes) => void;
-  name: string; price: number | null; type: ItemType; error: string | null;
+  name: string; price: number | null; type: ItemType; error: string | null; recentItems?: Item[];
 }) {
   const description = value.quotationDescription ?? "";
   const quoteOn = value.includeInQuotation ?? false;
@@ -50,7 +50,7 @@ export function ItemCatalogFields({ value, onChange, name, price, type, error }:
       <span className="mt-1 block font-normal">Este código no es válido: corrígelo (sin espacios, hasta 64 caracteres) o bórralo para poder guardar.</span>
     </label>}
 
-    <ItemCategoryPicker value={value} onChange={onChange} />
+    <ItemCategoryPicker value={value} onChange={onChange} name={name} recentItems={recentItems} />
 
     <section className={`overflow-hidden rounded-2xl border bg-white transition-colors duration-300 ${quoteOn ? "border-[#0B3F64]" : "border-slate-200"}`}>
       <SwitchRow icon={FileText} strong title="Incluir en cotización" checked={quoteOn}

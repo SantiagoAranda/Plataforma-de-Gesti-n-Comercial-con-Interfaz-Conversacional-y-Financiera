@@ -256,3 +256,151 @@ test("quotation text remains persisted when inclusion is turned off",async()=>{
  await act(async()=>result.current.handleSend());
  assert.equal(body.includeInQuotation,false);assert.equal(body.quotationDescription,item.quotationDescription);
 });
+
+// ---- F1.3: recent categories and name suggestions ----
+const {recentCategories,suggestCategory,CATEGORY_RULES}=require('../lib/itemCategorySuggestions.ts');
+const A='alimentos-y-bebidas';
+const saved=(categoryId,subcategoryId,updatedAt,extra={})=>({id:updatedAt,categoryId,subcategoryId,updatedAt,...extra});
+test("recent categories: newest updatedAt first, distinct, at most four, invalid and Otra skipped, list untouched",()=>{
+ const items=[
+  saved(A,`${A}/lacteos-y-huevos`,"2026-11-01T00:00:00Z"),
+  saved(A,`${A}/licores-y-cervezas`,"2026-11-05T00:00:00Z"),
+  saved(A,`${A}/lacteos-y-huevos`,"2026-11-06T00:00:00Z"),
+  saved("otra",null,"2026-11-09T00:00:00Z",{customCategoryName:"Propia"}),
+  saved("borrada",null,"2026-11-08T00:00:00Z"),
+  saved(A,"mascotas/alimento-para-perros","2026-11-07T00:00:00Z"),
+  saved(null,null,"2026-11-10T00:00:00Z"),
+  saved("mascotas",null,"2026-11-04T00:00:00Z"),
+  saved("aseo-y-limpieza","aseo-y-limpieza/ambientadores","2026-11-03T00:00:00Z"),
+  saved("calzado",null,"2026-11-02T00:00:00Z"),
+ ];
+ const before=items.map(i=>i.id);
+ assert.deepEqual(recentCategories(items),[
+  {categoryId:A,subcategoryId:`${A}/lacteos-y-huevos`},
+  {categoryId:A,subcategoryId:`${A}/licores-y-cervezas`},
+  {categoryId:"mascotas",subcategoryId:null},
+  {categoryId:"aseo-y-limpieza",subcategoryId:"aseo-y-limpieza/ambientadores"},
+ ]);
+ assert.deepEqual(items.map(i=>i.id),before);
+ assert.deepEqual(recentCategories([]),[]);
+});
+test("the 18 prototype rules point only to existing category and subcategory ids",()=>{
+ assert.equal(CATEGORY_RULES.length,18);
+ for(const rule of CATEGORY_RULES){
+  const category=frontend.ITEM_CATEGORIES.find(c=>c.id===rule.categoryId);
+  assert.ok(category,rule.categoryId);
+  if(rule.subcategoryId)assert.ok(category.subcategories.some(s=>s.id===rule.subcategoryId),rule.subcategoryId);
+ }
+});
+test("name suggestions: whole normalized words, ambiguity yields nothing or category only, short names ignored",()=>{
+ const sub=s=>({categoryId:A,subcategoryId:`${A}/${s}`});
+ assert.deepEqual(suggestCategory("Cerveza Club Colombia"),sub("licores-y-cervezas"));
+ assert.deepEqual(suggestCategory("JAMÓN de cerdo"),sub("carnes-pescados-y-embutidos"));
+ assert.deepEqual(suggestCategory("Pan tajado"),sub("panaderia-y-galletas"));
+ assert.deepEqual(suggestCategory("Panes artesanales"),sub("panaderia-y-galletas"));
+ assert.deepEqual(suggestCategory("Panadería del barrio"),sub("panaderia-y-galletas"));
+ assert.deepEqual(suggestCategory("Comida congelada"),sub("congelados-y-helados"));
+ assert.deepEqual(suggestCategory("Corte de cabello"),{categoryId:"belleza-y-cuidado-personal",subcategoryId:"belleza-y-cuidado-personal/cuidado-del-cabello"});
+ assert.deepEqual(suggestCategory("Collar para perro"),{categoryId:"mascotas",subcategoryId:null});
+ for(const name of ["Aguacate hass","Pantalón jean","Teclado","Mesa","Ronda","Petaca"])assert.equal(suggestCategory(name),null,name);
+ assert.equal(suggestCategory("Crema de leche"),null);
+ assert.equal(suggestCategory("Alimento para perro"),null);
+ assert.deepEqual(suggestCategory("Café con leche"),{categoryId:A,subcategoryId:null});
+ for(const name of ["","té","  ab  "])assert.equal(suggestCategory(name),null,name);
+ assert.equal(suggestCategory("Alcohol antiséptico"),null);
+});
+test("known false positives are excluded without hiding the real matches",()=>{
+ for(const name of ["Pasta dental","Pasta de dientes","Clases de salsa","Clase de salsa caleña","Gato hidráulico","Gato hidráulico 2 toneladas","Gato mecánico"])assert.equal(suggestCategory(name),null,name);
+ assert.deepEqual(suggestCategory("Pasta corta"),{categoryId:A,subcategoryId:`${A}/despensa-y-granos`});
+ assert.deepEqual(suggestCategory("Salsa de tomate"),{categoryId:A,subcategoryId:`${A}/aceites-salsas-y-condimentos`});
+ assert.deepEqual(suggestCategory("Arena para gato"),{categoryId:"mascotas",subcategoryId:null});
+ for(const rule of CATEGORY_RULES)for(const term of rule.unless??[])assert.ok(!rule.terms.includes(term),term);
+});
+function CategoryHarness({start,recentItems}){
+ const form=useItemForm(noop,noop);
+ return React.createElement(React.Fragment,null,
+   React.createElement("button",{onClick:()=>form.handleStartEdit(start)},"Abrir edición"),
+   React.createElement(ItemFormContent,{...form.contentProps,recentItems}),
+   React.createElement("button",{onClick:form.handleSend},"Guardar prueba"));
+}
+const storageWrites=()=>{const calls=[];const original=window.localStorage.setItem;window.localStorage.setItem=function(...a){calls.push(a);return original.apply(this,a);};return {calls,restore:()=>{window.localStorage.setItem=original;}};};
+test("suggestion is offered in the modal, never applied by itself, and works for products and services",async()=>{
+ for(const start of [item,{...item,type:'SERVICE',inventoryMode:'NONE',saleConcept:'SERVICES',appliesImpoconsumo:false,impoconsumoRate:null,durationMinutes:30,schedule:[{weekday:'MON',startMinute:480,endMinute:720}]}]){
+  const isService=start.type==='SERVICE';const name=isService?"Corte de cabello":"Cerveza artesanal";
+  let body;const calls=[];apiHandler=async(url,options)=>{calls.push({url,method:options?.method});if(options?.method==='PATCH')body=JSON.parse(options.body);return structuredClone(start);};
+  const storage=storageWrites();
+  render(React.createElement(CategoryHarness,{start}));
+  await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Abrir edición"})));
+  fireEvent.change(screen.getByLabelText("Nombre"),{target:{value:name}});
+  const trigger=screen.getByRole("button",{name:/Elegir categoría/});
+  fireEvent.click(trigger);
+  const use=screen.getByRole("button",{name:/^Usar sugerencia:/});
+  assert.match(use.textContent,new RegExp(`Sugerida para «${name}»`));
+  assert.match(trigger.textContent,/Elegir categoría/);
+  assert.equal(screen.getAllByRole("button",{name:/Sin categoría/})[0].textContent,"Sin categoría");
+  fireEvent.click(use);
+  assert.equal(screen.queryByRole("dialog"),null);assert.equal(document.activeElement,trigger);
+  await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Guardar prueba"})));
+  assert.deepEqual([body.categoryId,body.subcategoryId,body.customCategoryName,body.customSubcategoryName],isService
+   ?["belleza-y-cuidado-personal","belleza-y-cuidado-personal/cuidado-del-cabello",null,null]
+   :[A,`${A}/licores-y-cervezas`,null,null]);
+  assert.equal(body.type,start.type);
+  assert.deepEqual(calls.map(c=>c.method??"GET").filter(m=>m!=="GET"),["PATCH"]);
+  assert.equal(storage.calls.length,0);storage.restore();
+  cleanup();
+ }
+});
+test("a saved or manual selection is never replaced: no suggestion while a category is chosen",async()=>{
+ let body;const start={...item,name:"Cerveza",categoryId:"calzado",subcategoryId:null};
+ apiHandler=async(url,options)=>{if(options?.method==='PATCH')body=JSON.parse(options.body);return structuredClone(start);};
+ render(React.createElement(CategoryHarness,{start,recentItems:[]}));
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Abrir edición"})));
+ fireEvent.change(screen.getByLabelText("Nombre"),{target:{value:"Cerveza negra"}});
+ fireEvent.click(screen.getByRole("button",{name:/Calzado/}));
+ assert.equal(screen.queryByRole("button",{name:/^Usar sugerencia:/}),null);
+ assert.equal(screen.queryByText("Usadas recientemente"),null);
+ fireEvent.keyDown(screen.getByRole("dialog"),{key:"Escape"});
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Guardar prueba"})));
+ assert.deepEqual([body.categoryId,body.subcategoryId],["calzado",null]);
+});
+test("recent chips pick the full pair in one click, clear custom names, allow no subcategory and keep keyboard behaviour",async()=>{
+ let body;apiHandler=async(url,options)=>{if(options?.method==='PATCH')body=JSON.parse(options.body);return structuredClone(item);};
+ const recentItems=[saved(A,`${A}/lacteos-y-huevos`,"2026-11-06T00:00:00Z"),saved("mascotas",null,"2026-11-05T00:00:00Z"),saved("otra",null,"2026-11-09T00:00:00Z",{customCategoryName:"Propia"})];
+ const storage=storageWrites();
+ render(React.createElement(CategoryHarness,{start:item,recentItems}));
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Abrir edición"})));
+ // Start from a custom selection so the quick pick has to clear the custom names.
+ fireEvent.click(screen.getByRole("button",{name:/Elegir categoría/}));
+ fireEvent.click(screen.getByRole("button",{name:/^Otra categoría/}));
+ fireEvent.change(screen.getByLabelText("Nombre de categoría"),{target:{value:"Propia"}});
+ fireEvent.change(screen.getByLabelText("Subcategoría personalizada (opcional)"),{target:{value:"Sub"}});
+ fireEvent.click(screen.getByRole("button",{name:"Listo"}));
+ const trigger=screen.getByRole("button",{name:/Propia/});
+ fireEvent.click(trigger);
+ assert.ok(screen.getByText("Usadas recientemente"));
+ assert.deepEqual([...screen.getByRole("dialog").querySelectorAll("button[aria-label^='Usar ']")].map(c=>c.getAttribute("aria-label")),["Usar Alimentos y Bebidas › Lácteos y Huevos","Usar Mascotas, sin subcategoría"]);
+ const dialog=screen.getByRole("dialog");const focusable=dialog.querySelectorAll("button:not([disabled]), input:not([disabled])");
+ focusable[focusable.length-1].focus();fireEvent.keyDown(dialog,{key:"Tab"});assert.equal(document.activeElement,focusable[0]);
+ fireEvent.change(screen.getByLabelText("Buscar categoría"),{target:{value:"masc"}});
+ assert.equal(screen.queryByText("Usadas recientemente"),null);
+ fireEvent.change(screen.getByLabelText("Buscar categoría"),{target:{value:""}});
+ fireEvent.click(screen.getByRole("button",{name:"Usar Alimentos y Bebidas › Lácteos y Huevos"}));
+ assert.equal(screen.queryByRole("dialog"),null);assert.equal(document.activeElement,trigger);
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Guardar prueba"})));
+ assert.deepEqual([body.categoryId,body.subcategoryId,body.customCategoryName,body.customSubcategoryName],[A,`${A}/lacteos-y-huevos`,null,null]);
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Abrir edición"})));
+ fireEvent.click(screen.getByRole("button",{name:/Elegir categoría/}));
+ fireEvent.click(screen.getByRole("button",{name:"Usar Mascotas, sin subcategoría"}));
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Guardar prueba"})));
+ assert.deepEqual([body.categoryId,body.subcategoryId],["mascotas",null]);
+ assert.equal(storage.calls.length,0);storage.restore();
+});
+test("Mi Negocio passes its saved items to the picker as recent categories",async()=>{
+ routeParams=new URLSearchParams("");
+ const listed={...item,categoryId:"calzado",subcategoryId:null,updatedAt:"2026-11-10T00:00:00Z",images:item.images.slice(0,1)};
+ apiHandler=async(url)=>url.startsWith("/items?")?[listed]:structuredClone(item);
+ await act(async()=>{render(React.createElement(Page));await new Promise(resolve=>setTimeout(resolve,5));});
+ await act(async()=>fireEvent.click(screen.getByRole("button",{name:"Editar tarjeta"})));
+ fireEvent.click(screen.getByRole("button",{name:/Elegir categoría/}));
+ assert.ok(screen.getByRole("button",{name:"Usar Calzado, sin subcategoría"}));
+});

@@ -1506,9 +1506,9 @@
     "semantic_hash": ""
   },
   "frontend/app/(app)/mi-negocio/page.tsx": {
-    "mtime": 1795183329.3275602,
-    "seen": 1795184266.6629534,
-    "ast_hash": "8ace37eeb46210ff1862618bd9cc2694",
+    "mtime": 1795201718.7877378,
+    "seen": 1795202421.049051,
+    "ast_hash": "083e39a3c876c57ffc92d5fe276b1e06",
     "semantic_hash": ""
   },
   "frontend/app/(app)/movimientos/page.tsx": {
@@ -2052,9 +2052,9 @@
     "semantic_hash": "97497543ca6430a67365729508fb0254"
   },
   "frontend/src/components/mi-negocio/ItemFormContent.tsx": {
-    "mtime": 1795196297.389274,
-    "seen": 1795196808.2198162,
-    "ast_hash": "2fe2789515838da0a594f2e04d588a2b",
+    "mtime": 1795201735.6032887,
+    "seen": 1795202421.0743814,
+    "ast_hash": "01c974efaab298fba3f4e99f0e405985",
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemFormModal.tsx": {
@@ -3954,21 +3954,21 @@
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemCatalogFields.tsx": {
-    "mtime": 1795196327.4575403,
-    "seen": 1795196808.2198162,
-    "ast_hash": "1acfa0be79c893f6e3474749b955205b",
+    "mtime": 1795201698.395649,
+    "seen": 1795202421.0733807,
+    "ast_hash": "2153e190ab676b424b0d89367cf6b3aa",
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemCategoryPicker.tsx": {
-    "mtime": 1795196397.324537,
-    "seen": 1795196808.2198162,
-    "ast_hash": "8c92054492215e9b71748f41a3021a1d",
+    "mtime": 1795202033.852626,
+    "seen": 1795202421.0733807,
+    "ast_hash": "6aedba9809c205a88107c99b42332be1",
     "semantic_hash": ""
   },
   "frontend/src/hooks/useItemForm.test.cjs": {
-    "mtime": 1795196478.5348437,
-    "seen": 1795196808.2358196,
-    "ast_hash": "5775d943b26d08909d899fc4c46338be",
+    "mtime": 1795203054.979003,
+    "seen": 1795203590.2771015,
+    "ast_hash": "afa12e3ea66c9c25d7c6826b3ceb242c",
     "semantic_hash": ""
   },
   "frontend/src/hooks/useItemForm.ts": {
@@ -3990,9 +3990,21 @@
     "semantic_hash": ""
   },
   "docs/verification/f1.2-b/README.md": {
-    "mtime": 1795183329.3265605,
-    "seen": 1795184266.7847424,
-    "ast_hash": "ce0c67ff357b3af0da2384615efee1a6",
+    "mtime": 1795202392.673242,
+    "seen": 1795202421.1236033,
+    "ast_hash": "491d7edc07ddca2fe447c5bb72fc3686",
+    "semantic_hash": ""
+  },
+  "frontend/src/lib/itemCategorySuggestions.ts": {
+    "mtime": 1795203047.6655755,
+    "seen": 1795203590.2841046,
+    "ast_hash": "4c92fe375cbfda24cd50e82ba7f3ba27",
+    "semantic_hash": ""
+  },
+  "docs/verification/f1.3/README.md": {
+    "mtime": 1795203569.729993,
+    "seen": 1795203590.3051765,
+    "ast_hash": "88e2c35e4a6f479bab1918f6dbc5348f",
     "semantic_hash": ""
   },
   "backend/package-lock.json": {

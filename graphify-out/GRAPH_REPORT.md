@@ -1,17 +1,17 @@
 # Graph Report - Plataforma-de-Gesti-n-Comercial-con-Interfaz-Conversacional-y-Financiera  (2026-11-20)
 
 ## Corpus Check
-- 712 files · ~518,088 words
+- 714 files · ~520,706 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 20 file(s) not represented in the graph (top: .csv 10, (none) 4, .example 1)
 
 ## Summary
-- 5074 nodes · 13000 edges · 228 communities (165 shown, 63 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 449 edges (avg confidence: 0.86)
+- 5096 nodes · 13047 edges · 228 communities (154 shown, 74 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 457 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cdd62737`
+- Built from commit: `aba1ee8c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,17 +19,17 @@
 - PayrollService
 - payroll.service.ts
 - inventory.ts
-- tienda/page.tsx
+- backend/package.json
 - ItemOptionsService
 - InventoryService
 - PrismaService
-- next
+- kardex/page.tsx
 - cn
 - rut-impuestos/page.tsx
 - PayrollController
 - PublicController
 - useItemForm.test.cjs
-- push-notifications.controller.ts
+- password-recovery.service.ts
 - seed.ts
 - api
 - ReservationsController
@@ -38,9 +38,9 @@
 - inventario/page.tsx
 - @nestjs/common
 - BusinessesController
-- business-slug.ts
+- businesses.service.ts
 - types/sales.ts
-- SaleCard.tsx
+- salePresentation.test.cjs
 - perfil/page.tsx
 - SimpleTaxController
 - PublicStoreClient.test.cjs
@@ -53,25 +53,25 @@
 - AuthController
 - AccountingChatComposer.tsx
 - InventoryController
-- MovementCompositionChart.tsx
+- TaxPreviewDto
 - businessDate.ts
 - SalesService
 - react
-- ItemsService
+- ItemsController
 - lib/api.ts
-- PrismaService
+- auth.module.ts
 - availability.service.ts
 - common/guards/business-active.guard.ts
 - backend/package.json
-- public.service.ts
-- RecoveryMailService
+- movements.controller.ts
+- Etapa 2: correo de recuperación por SMTP (Brevo Free)
 - nomina/page.tsx
 - item.ts
-- SimpleProductDetailSheet.tsx
+- LoginForm.tsx
 - movimientos/page.tsx
 - cancelReservation.test.cjs
 - useItemForm.ts
-- auth.service.ts
+- sharp-image-compat.test.cjs
 - SalesChatComposer.test.cjs
 - fiscal-document.service.ts
 - SaleTaxPanel.tsx
@@ -85,20 +85,20 @@
 - regimen-simple/page.tsx
 - AccountingService
 - businessProfile.test.cjs
-- fiscal-documents.ts
+- SaleCard.tsx
 - IngredientsService
 - EmployeePayrollEditorSheet
-- proxy-address-security.test.cjs
+- invoicePdf.ts
 - SaleCreateModal.tsx
 - PublicService
 - SessionBoundary.test.cjs
 - accounting.service.spec.ts
-- retrospectiveSale.test.cjs
+- ref_node_fs
 - RecoveryForms.test.cjs
 - ItemCategoryPicker.tsx
 - frontend/package.json
 - inventory.service.ts
-- ReservationDrawer.tsx
+- ReservationSlotPicker.tsx
 - run-reservations-isolated.cjs
 - movements-ui.ts
 - ProductsController
@@ -110,55 +110,52 @@
 - item-catalog.ts
 - IngredientsController
 - scripts
-- StoreSlugEditor.tsx
+- Etapa 4: cambio único de identificador y redirecciones permanentes
 - UpdateItemDto
 - PushNotificationsService
-- LoginForm.tsx
-- businesses.service.ts
+- Etapa 3: dirección pública durante el registro
+- UpdateBusinessConfigDto
 - cn
-- mi-negocio/page.tsx
+- SettingsController
 - FactusProvider
-- SettingsService
 - run-reservations-isolated.cjs
 - compilerOptions
+- CreateInventoryInitialDto
 - UpsertPurchasePresentationDto
 - lifecycle.test.cjs
 - UpsertSimpleTaxConfigDto
 - tsconfig.build.json
-- sharp-image-compat.test.cjs
+- CreateContractSettlementDto
 - CreatePublicReservationDto
 - SimpleTaxCalculateDto
 - CalculatePayrollDto
-- dependencies
+- ToastLimitListener.test.cjs
 - PayrollPage
 - BusinessDetailPage.tsx
 - jest
 - moduleActivity.ts
 - CreatePublicOrderDto
-- AdminBusinessThread.tsx
+- next
 - sharp
 - sales-price-history.spec.ts
 - RegisterForm.tsx
-- push-notifications.service.ts
-- SalesList.tsx
-- PushNotificationsController
+- temp-all-services.js
+- .withPublicLogoUrl
 - puc.ts
 - SalesChatComposer.tsx
-- AppService
+- CreateItemDto
 - nest-cli.json
 - PayrollRecordWizardSheet
-- inject_afternoon_schedules.ts
 - Cambios
 - CreateInventoryAdjustmentDto
 - reservation-booking.spec.ts
 - temp-logic-test.js
-- @prisma/client
+- class-validator
 - Bloque 2.2: confirmación automática de reservas y registro comercial al finalizar
 - PaySimpleTaxAnnualReturnDto
 - types.ts
-- RegisterPushSubscriptionDto
 - config
-- AppointmentLookupModal.tsx
+- publicPriceLabel
 - Nueva Venta: registro retrospectivo de servicios
 - CreateEmployeeContractDto
 - Bloque 2.1 — implementación y verificación
@@ -184,49 +181,52 @@
 - tsconfig.spec.json
 - Plan de correcciones propuesto — sin implementar
 - PostgreSQL desechable para validar Etapa 1
-- invoicePdf.ts
+- CartSummary.test.cjs
 - Continuación del selector de estados — 13 de noviembre de 2026
+- ItemsService
 - Preparación para producción — pruebas, dependencias, runtime y procedimiento
 - CreatePayrollEventDto
 - Inventario funcional — Nómina Colombia
 - Etapa 2: registro local y presentación de contraseñas
 - frontend/README.md
-- sales.service.ts
+- SalesOrderLineInputDto
 - CreateIngredientDto
 - Matriz normativa y vigencias
 - Comparación de fórmulas: sistema, cliente y norma
-- publicPreview.ts
+- ReservationSlotPicker.test.cjs
 - Entrega para revisión — 17/11/2026
 - carrito/page.tsx
-- users.module.ts
 - UpdateIngredientDto
-- @nestjs/passport
-- proxy-address-security.test.cjs
+- UpdateOrderItemDto
+- session.test.cjs
 - PERIODIC_PAYROLL_LIMITATIONS.md
 - CLAUDE.md
 - backfill-item-stock.ts
-- frontend/eslint.config.mjs
+- F1.3 — Categorías inteligentes: implementación local para revisión
 - temp-db-query.js
 - FiscalDocumentService
-- ItemFormContent
-- .postOrderMovements
-- accounting.service.ts
-- check-email-case-collisions.ts
-- parseFactusDateTime
-- ReservationSlotPicker.tsx
-- temp-all-services.js
-- [slug]/page.tsx
-- CreatePayrollAdjustmentDto
-- F1.2-B — implementación local para revisión
-- scripts
 - itemImages.ts
+- accounting.service.ts
+- parseFactusDateTime
+- InventoryKardexQueryDto
+- CreateIcaRateDto
+- InventoryKardexGlobalQueryDto
+- CreateTaxRuleDto
+- F1.2-B — implementación local para revisión
+- ItemCatalogFieldsDto
+- AddItemImageDto
 - Etapa 2: identificadores públicos reservados
-- simple-tax.service.ts
-- check_schedules.ts
-- prepare_split_schedule_test.ts
-- temp-db-check.ts
-- businesses-factus.spec.ts
+- settings.service.ts
+- UpdateBusinessProfileDto
+- parseAccountingDate
+- ListIngredientsQueryDto
+- SettingsService
+- ReverseOrderDto
 - Limpieza visual final de Nueva Venta
+- factus-municipalities.catalog.ts
+- ReplaceServiceConsumptionDto
+- eslint@^9.18.0
+- prettier@^3.4.2
 
 ## God Nodes (most connected - your core abstractions)
 1. `api()` - 161 edges
@@ -255,51 +255,51 @@
 ## Import Cycles
 - None detected.
 
-## Communities (228 total, 63 thin omitted)
+## Communities (228 total, 74 thin omitted)
 
 ### Community 1 - "payroll.service.ts"
 Cohesion: 0.04
-Nodes (30): CreateComplementaryPayrollRunDto, CreateContractSettlementDto, CreatePayrollPeriodDto, CreateEmployeeDto, UpdateEmployeeDto, ConfirmPayrollPaymentDto, CreatePayrollBenefitPaymentDto, CreatePayrollPaymentBatchDto (+22 more)
+Nodes (30): CreateComplementaryPayrollRunDto, CreatePayrollAdjustmentDto, CreatePayrollPeriodDto, CreateEmployeeDto, UpdateEmployeeDto, ConfirmPayrollPaymentDto, CreatePayrollBenefitPaymentDto, CreatePayrollPaymentBatchDto (+22 more)
 
 ### Community 2 - "inventory.ts"
-Cohesion: 0.05
-Nodes (87): EditarIngredientePage(), IngredienteDetailPage(), DependencyList(), IngredientDeactivationImpactModal(), Props, emptyPresentationForm, IngredientDetailSheet(), PresentationEditorMode (+79 more)
+Cohesion: 0.06
+Nodes (74): DependencyList(), IngredientDeactivationImpactModal(), Props, emptyPresentationForm, IngredientDetailSheet(), PresentationEditorMode, Props, TabType (+66 more)
 
-### Community 3 - "tienda/page.tsx"
-Cohesion: 0.17
-Nodes (17): AdminProductCard(), FOOTER_SOCIAL_TYPES, isHexColor(), Item, MiTiendaPage(), normalizeFooterPhones(), normalizeFooterSocials(), PrivateProductDetailOverlay() (+9 more)
+### Community 3 - "backend/package.json"
+Cohesion: 0.09
+Nodes (22): author, description, jest@^30.0.0, @nestjs/cli@^11.0.0, ts-loader@^9.5.2, @types/multer@^2.1.0, @types/node@^22.19.11, @types/supertest@^6.0.2 (+14 more)
 
 ### Community 4 - "ItemOptionsService"
 Cohesion: 0.06
 Nodes (9): CreateItemOptionDto, CreateOptionGroupDto, UpdateItemOptionDto, UpdateOptionGroupDto, ItemOptionsController, ItemOptionsService, OptionSelectionActionInput, createService() (+1 more)
 
 ### Community 5 - "InventoryService"
-Cohesion: 0.15
+Cohesion: 0.11
 Nodes (3): InventoryService, createService(), createServiceWithAccounting()
 
 ### Community 6 - "PrismaService"
-Cohesion: 0.07
-Nodes (25): p, prisma, prisma, Args, AppModule, BusinessActiveGuard, ListIngredientsQueryDto, PrismaService (+17 more)
+Cohesion: 0.04
+Nodes (41): p, prisma, prisma, prisma, WEEKDAYS, prisma, prisma, main() (+33 more)
 
-### Community 7 - "next"
+### Community 7 - "kardex/page.tsx"
 Cohesion: 0.07
-Nodes (31): AdminHomePage(), ConfiguracionPage(), NuevoIngredientePage(), KardexPage(), KardexPageContent(), nextConfig, LogoutButton(), InventoryChatActionBar() (+23 more)
+Nodes (40): KardexPage(), KardexPageContent(), InventoryChatActionBar(), InventoryChatActionBarProps, InventoryChatMenuAction, MENU, KardexList(), movementMeta() (+32 more)
 
 ### Community 8 - "cn"
-Cohesion: 0.10
-Nodes (38): DraftRecipeLine, ExpandableRecipeCard(), formatQuantity(), formatQuantityInput(), inferInitialStep(), InfoCell(), MetricCard(), Props (+30 more)
+Cohesion: 0.07
+Nodes (57): ConsumptionHistoryTab(), formatOccurredAt(), Props, DraftRecipeLine, ExpandableRecipeCard(), formatQuantity(), formatQuantityInput(), inferInitialStep() (+49 more)
 
 ### Community 9 - "rut-impuestos/page.tsx"
 Cohesion: 0.11
-Nodes (31): BUSINESS_PROFILE_OPTIONS, decimalToPerThousand(), deriveBusinessProfile(), deriveIncomeTaxDeclarant(), DianBadge(), normalizeCodes(), parsePerThousand(), RESPONSIBILITY_LABELS (+23 more)
+Nodes (33): BUSINESS_PROFILE_OPTIONS, decimalToPerThousand(), deriveBusinessProfile(), deriveIncomeTaxDeclarant(), DianBadge(), normalizeCodes(), parsePerThousand(), RESPONSIBILITY_LABELS (+25 more)
 
 ### Community 12 - "useItemForm.test.cjs"
-Cohesion: 0.10
-Nodes (15): assert, dom, FormHarness(), fs, item, {JSDOM}, Module, noop() (+7 more)
+Cohesion: 0.08
+Nodes (21): BadgeColorSelect(), ItemFormContent(), TimeSelectAMPM(), assert, CategoryHarness(), dom, FormHarness(), fs (+13 more)
 
-### Community 13 - "push-notifications.controller.ts"
-Cohesion: 0.20
-Nodes (6): AuthorizePushDto, PushStatusDto, TestPushDto, UnregisterPushSubscriptionDto, UpdatePushPreferencesDto, AuthenticatedRequest
+### Community 13 - "password-recovery.service.ts"
+Cohesion: 0.13
+Nodes (12): cooldownMinutes(), Db, integer(), mailQuotaLimits, recordMailOutcome(), reserveMailSlot(), PasswordRecoveryService, passwordV2Enabled() (+4 more)
 
 ### Community 14 - "seed.ts"
 Cohesion: 0.20
@@ -307,183 +307,179 @@ Nodes (23): main(), normalizeCode(), parseCSV(), prisma, Row, seedAdmin(), seedA
 
 ### Community 15 - "api"
 Cohesion: 0.07
-Nodes (60): formatDisplayMoney(), getCalendarBusinessDayKey(), getSaleSaveErrorMessage(), isDeletionBlockedByPostedInventory(), isRealizedSale(), mapOrderToSale(), MonthPickerPopover(), SaleReceiptModal (+52 more)
+Nodes (58): formatDisplayMoney(), getCalendarBusinessDayKey(), getSaleSaveErrorMessage(), isDeletionBlockedByPostedInventory(), isRealizedSale(), mapOrderToSale(), MonthPickerPopover(), SaleReceiptModal (+50 more)
 
 ### Community 17 - "usePushNotifications.ts"
 Cohesion: 0.09
-Nodes (44): ActivatePushResult, ACTIVATION_MESSAGES, ActivationCoordinatorEvent, ActivationFailure, createBrowserSubscription(), debugActivationTimeout(), emitActivationState(), getReadyPushRegistration() (+36 more)
+Nodes (44): ActivatePushResult, ACTIVATION_MESSAGES, ActivationCoordinatorEvent, ActivationFailure, createBrowserSubscription(), debugActivationTimeout(), deviceIdForUser(), emitActivationState() (+36 more)
 
 ### Community 18 - "PublicStoreClient.tsx"
-Cohesion: 0.09
-Nodes (44): buildOptionSelectionsFromSelectedIds(), canonicalizeOptionSelections(), CartLine, cartLineKey(), DesktopProductImage(), FOOTER_PLACEHOLDERS, FOOTER_SOCIAL_TYPES, formatCop() (+36 more)
+Cohesion: 0.08
+Nodes (47): decodeSlug(), FALLBACK_METADATA, generateMetadata(), getStoreItems(), Page(), Props, resolveStore, SearchParams (+39 more)
 
 ### Community 19 - "inventario/page.tsx"
-Cohesion: 0.09
-Nodes (47): formatInventoryTotal, InventarioPage(), InventarioPageContent(), SaveBarContext, UITab, DraftServiceIngredient, ExpandableServiceConsumptionCard(), formatQuantity() (+39 more)
+Cohesion: 0.10
+Nodes (38): formatInventoryTotal, InventarioPage(), InventarioPageContent(), SaveBarContext, UITab, IngredientList(), Metric(), Props (+30 more)
 
 ### Community 20 - "@nestjs/common"
-Cohesion: 0.07
-Nodes (22): AccountingModule, AvailabilityModule, BusinessesModule, CommonModule, FiscalDocumentsModule, IngredientsModule, InventoryModule, ItemOptionsModule (+14 more)
+Cohesion: 0.06
+Nodes (22): AccountingModule, AppController, AppService, AvailabilityModule, BusinessesModule, CommonModule, FiscalDocumentsModule, IngredientsModule (+14 more)
 
-### Community 21 - "BusinessesController"
-Cohesion: 0.10
-Nodes (6): BusinessesController, getBusinessId(), adminFactusView(), BusinessesService, loadPayrollAccountingMappingTemplate(), UpdateBusinessProfileDto
-
-### Community 22 - "business-slug.ts"
-Cohesion: 0.08
-Nodes (21): BusinessSlugQueryDto, IsBusinessSlug(), RegisterBusinessDto, BUSINESS_SLUG_PATTERN, businessSlugChangeUsed(), businessSlugTaken(), generateBusinessSlug(), RESERVED_BUSINESS_SLUGS (+13 more)
+### Community 22 - "businesses.service.ts"
+Cohesion: 0.05
+Nodes (51): AuthService, UserData, hashNewPassword(), validateNewPassword(), verifyPassword(), ADMIN_FACTUS_SELECT, ALLOWED_LOGO_MIME_TYPES, ALLOWED_SOCIAL_TYPES (+43 more)
 
 ### Community 23 - "types/sales.ts"
-Cohesion: 0.09
-Nodes (31): Acciones y recorridos, Archivos de este bloque, Bloque 2.1.2 — estados visuales y menú de servicios, Interacción móvil y accesibilidad, Selección del badge, Verificación, Step, formatMoney() (+23 more)
+Cohesion: 0.08
+Nodes (33): Acciones y recorridos, Archivos de este bloque, Bloque 2.1.2 — estados visuales y menú de servicios, Interacción móvil y accesibilidad, Selección del badge, Verificación, formatMoney(), SaleDetailsModal() (+25 more)
 
-### Community 24 - "SaleCard.tsx"
-Cohesion: 0.09
-Nodes (29): CardActionsMenu(), cardMenuActionClass, menuPosition(), FiscalDocumentMenu(), Props, calcTotal(), formatAppointment(), formatDisplayMoney() (+21 more)
+### Community 24 - "salePresentation.test.cjs"
+Cohesion: 0.12
+Nodes (11): assert, dom, fs, { JSDOM }, Module, path, React, { render, screen, fireEvent, cleanup } (+3 more)
 
 ### Community 25 - "perfil/page.tsx"
-Cohesion: 0.09
-Nodes (39): CardHeader(), createLocalId(), EmailSource, FooterPhone, FooterSocial, getSocialLabel(), getVisibleSocials(), hasRealValue() (+31 more)
+Cohesion: 0.11
+Nodes (31): CardHeader(), createLocalId(), EmailSource, FooterPhone, FooterSocial, getSocialLabel(), getVisibleSocials(), hasRealValue() (+23 more)
 
 ### Community 27 - "PublicStoreClient.test.cjs"
 Cohesion: 0.08
 Nodes (16): assert, dom, fs, hidden, {JSDOM}, messages, Module, params (+8 more)
 
 ### Community 28 - "factusEntitlement.test.cjs"
-Cohesion: 0.14
-Nodes (11): assert, cardModule, filename, fs, Module, off, path, React (+3 more)
+Cohesion: 0.12
+Nodes (13): react-dom@19.2.3, assert, cardModule, filename, fs, Module, off, path (+5 more)
 
 ### Community 29 - "payroll/api.ts"
 Cohesion: 0.06
 Nodes (38): ArlRiskClass, CalculatePayrollPayload, Contract, CreateContractPayload, CreateEmployeePayload, CreatePayrollEventPayload, CreatePayrollPeriodPayload, CreateSettlementPayload (+30 more)
 
 ### Community 30 - "RecipesService"
-Cohesion: 0.08
-Nodes (7): RecipeLineDto, ReplaceRecipeDto, RecipesBulkController, RecipesController, RecipesModule, RecipesService, createService()
+Cohesion: 0.12
+Nodes (4): RecipesBulkController, RecipesController, RecipesService, createService()
 
 ### Community 31 - "web-push.transport.ts"
-Cohesion: 0.12
-Nodes (9): web-push@3.6.7, AddressResolver, blockedAddresses, isPublicPushAddress(), PublicAddress, resolveAndValidatePushEndpoint(), VapidProvider, WebPushTransport (+1 more)
+Cohesion: 0.08
+Nodes (19): web-push@3.6.7, incrementCounter(), key(), mac(), PUSH_PROOF_TTL_MS, PushProofClaims, signPushProof(), verifyPushProof() (+11 more)
 
 ### Community 33 - "ManualPaidOutflowSheet.tsx"
 Cohesion: 0.08
-Nodes (32): calendarDateFromKey(), copFormatter, createInitialForm(), ExpensePucSearchOption, formatAmount(), FormState, ManualPaidOutflowSheet(), ManualPaidOutflowSheetProps (+24 more)
+Nodes (33): calendarDateFromKey(), copFormatter, createInitialForm(), ExpensePucSearchOption, formatAmount(), FormState, ManualPaidOutflowSheet(), ManualPaidOutflowSheetProps (+25 more)
 
 ### Community 34 - "AuthController"
-Cohesion: 0.11
-Nodes (5): AuthAction(), AuthController, ForgotPasswordDto, LoginDto, ResetPasswordDto
+Cohesion: 0.08
+Nodes (8): AuthAction(), AuthController, BusinessSlugQueryDto, IsBusinessSlug(), ForgotPasswordDto, LoginDto, RegisterBusinessDto, ResetPasswordDto
 
 ### Community 35 - "AccountingChatComposer.tsx"
 Cohesion: 0.10
-Nodes (23): AccountingChatComposer(), AccountingFormErrors, NatureFilter, Props, SEARCH_MODES, SearchFilters, SearchMode, AccountingExpandableForm() (+15 more)
+Nodes (22): AccountingChatComposer(), AccountingFormErrors, NatureFilter, Props, SEARCH_MODES, SearchFilters, SearchMode, AccountingExpandableForm() (+14 more)
 
-### Community 37 - "MovementCompositionChart.tsx"
-Cohesion: 0.50
-Nodes (3): colors, Item, MovementCompositionChart()
+### Community 37 - "TaxPreviewDto"
+Cohesion: 0.12
+Nodes (3): assertNoHiddenPrices(), TaxPreviewCartItemDto, TaxPreviewDto
 
 ### Community 38 - "businessDate.ts"
-Cohesion: 0.18
-Nodes (20): todayISO(), AccountingMovementList(), groupLabel(), movementDayKey(), movementTimestamp(), Props, groupLabel(), Props (+12 more)
+Cohesion: 0.15
+Nodes (22): todayISO(), AccountingMovementList(), groupLabel(), movementDayKey(), movementTimestamp(), Props, DateSeparator(), groupLabel() (+14 more)
+
+### Community 39 - "SalesService"
+Cohesion: 0.10
+Nodes (5): lifecycleConflict(), orderTransitionBlock(), throwLifecycleError(), lockOwnedOrder(), SalesService
 
 ### Community 40 - "react"
 Cohesion: 0.06
-Nodes (32): inventoryMeta(), ItemCardComponent(), Props, IngredientOption, inventoryMeta(), Item, ItemDetailModal(), ItemDetailModalProps (+24 more)
-
-### Community 41 - "ItemsService"
-Cohesion: 0.06
-Nodes (5): AddItemImageDto, ItemsController, ItemsService, setup(), StorageService
+Nodes (33): inventoryMeta(), ItemCardComponent(), Props, IngredientOption, inventoryMeta(), Item, ItemDetailModal(), ItemDetailModalProps (+25 more)
 
 ### Community 42 - "lib/api.ts"
-Cohesion: 0.10
-Nodes (28): HomeLayout(), messageFromErrorBody(), getToken(), handleSessionExpired(), CREATED_LOGIN_REQUIRED, registerAccount(), Registration, REGISTRATION_UNCONFIRMED (+20 more)
-
-### Community 43 - "PrismaService"
 Cohesion: 0.06
-Nodes (30): AUTH_ACTION, AuthActionName, authActionOf(), handlerFor(), AuthModule, authProxyTrust(), AuthRateLimitGuard, Counter (+22 more)
+Nodes (48): AdminLayout(), HomeLayout(), metadata, RootLayout(), viewport, SessionBoundary(), getInternalSaleUrl(), PushForegroundListener() (+40 more)
+
+### Community 43 - "auth.module.ts"
+Cohesion: 0.05
+Nodes (28): AUTH_ACTION, AuthActionName, authActionOf(), handlerFor(), AuthModule, authProxyTrust(), AuthRateLimitGuard, Counter (+20 more)
 
 ### Community 44 - "availability.service.ts"
 Cohesion: 0.09
 Nodes (23): AgendaKey, agendaLockKey(), ALLOWED_SLOT_INTERVALS, AvailabilityService, BlockRange, computeSlots(), Db, evaluateSlot() (+15 more)
 
 ### Community 45 - "common/guards/business-active.guard.ts"
-Cohesion: 0.06
-Nodes (17): AuthenticatedRequest, UpdateBusinessSlugDto, Roles(), ROLES_KEY, BusinessActiveGuard, JwtAuthGuard, RolesGuard, UpdateItemStatusDto (+9 more)
+Cohesion: 0.08
+Nodes (15): JwtAuthGuard, AuthenticatedRequest, UpdateBusinessSlugDto, Roles(), ROLES_KEY, BusinessActiveGuard, JwtAuthGuard, RolesGuard (+7 more)
 
 ### Community 46 - "backend/package.json"
-Cohesion: 0.05
-Nodes (55): author, description, devDependencies, eslint@^9.18.0, eslint-config-prettier@^10.0.1, @eslint/eslintrc@^3.2.0, jest@^30.0.0, @nestjs/cli@^11.0.0 (+47 more)
+Cohesion: 0.07
+Nodes (30): devDependencies, csv-parse@^6.1.0, eslint-config-prettier@^10.0.1, @eslint/eslintrc@^3.2.0, @nestjs/schematics@^11.0.0, @nestjs/testing@^11.0.1, source-map-support@^0.5.21, supertest@^7.0.0 (+22 more)
 
-### Community 47 - "public.service.ts"
-Cohesion: 0.04
-Nodes (18): FeatureFlagsService, parseBooleanFlag(), CancelPublicReservationDto, FOOTER_META_TYPES, getFooterColorMetaValue(), getFooterMetaValue(), normalizePublicFooterSettings(), PUBLIC_RESERVATION_REPLAY_WINDOW_MS (+10 more)
+### Community 47 - "movements.controller.ts"
+Cohesion: 0.10
+Nodes (7): CreateMovementDto, MovementType, EXPENSE, INCOME, MovementsController, MovementsModule, MovementsService
 
-### Community 48 - "RecoveryMailService"
-Cohesion: 0.18
-Nodes (7): RecoveryMailService, Auditoría del servicio existente (sin reescritura), Condiciones para staging, Etapa 2: correo de recuperación por SMTP (Brevo Free), Pendiente cuando haya credenciales autorizadas (distinguir tres niveles), Variables (Railway / `.env`; ver `backend/.env.example`), Verificación realizada
+### Community 48 - "Etapa 2: correo de recuperación por SMTP (Brevo Free)"
+Cohesion: 0.29
+Nodes (6): Auditoría del servicio existente (sin reescritura), Condiciones para staging, Etapa 2: correo de recuperación por SMTP (Brevo Free), Pendiente cuando haya credenciales autorizadas (distinguir tres niveles), Variables (Railway / `.env`; ver `backend/.env.example`), Verificación realizada
 
 ### Community 49 - "nomina/page.tsx"
 Cohesion: 0.07
 Nodes (29): ActivePayrollCycle, AdjustmentsDraft, ContractDraft, createContractOnlyTabs, createEmployeeOnlyTabs, createEmployeeTabs, dateOnlyUtc(), EmployeeDraft (+21 more)
 
 ### Community 50 - "item.ts"
-Cohesion: 0.18
-Nodes (17): BADGE_PRESET_COLORS, ItemFormContentProps, SALE_CONCEPT_OPTIONS, MiNegocioChatComposerProps, FormErrors, ItemCatalogAttributes, ItemImage, ItemInventoryMode (+9 more)
+Cohesion: 0.17
+Nodes (20): ItemCatalogFields(), SwitchRow(), BADGE_PRESET_COLORS, ItemFormContentProps, SALE_CONCEPT_OPTIONS, MiNegocioChatComposerProps, isValidBarcode(), FormErrors (+12 more)
 
-### Community 51 - "SimpleProductDetailSheet.tsx"
-Cohesion: 0.24
-Nodes (13): KardexList(), movementMeta(), purchaseModeBadge(), isValidDecimalString(), normalizeDecimalInput(), Props, SimpleProductDetailSheet(), TabType (+5 more)
+### Community 51 - "LoginForm.tsx"
+Cohesion: 0.11
+Nodes (22): Autenticación: `/admin`, T7.a y estado final de las Etapas 1 y 2, Causas raíz y correcciones, Estado de las Etapas, No verificado (requiere navegador real), Pruebas, Recomendaciones para staging, Riesgos pendientes, LoginPage() (+14 more)
 
 ### Community 52 - "movimientos/page.tsx"
-Cohesion: 0.15
-Nodes (23): formatCop(), formatLocalISO(), formatRate(), isTodayLocal(), MONTH_NAMES, MonthPickerPopover(), MovimientosPage(), run() (+15 more)
+Cohesion: 0.12
+Nodes (27): ConfiguracionPage(), formatCop(), formatLocalISO(), formatRate(), isTodayLocal(), MONTH_NAMES, MonthPickerPopover(), MovimientosPage() (+19 more)
 
 ### Community 53 - "cancelReservation.test.cjs"
 Cohesion: 0.08
 Nodes (18): assert, dom, fs, { JSDOM }, Module, openDetails(), order, path (+10 more)
 
 ### Community 54 - "useItemForm.ts"
-Cohesion: 0.23
-Nodes (14): ItemFormModal(), notify(), compressImageFile(), Notice, mount(), useItemForm(), createInitialWeek(), formatPriceInput() (+6 more)
+Cohesion: 0.22
+Nodes (18): MiNegocioPage(), MiNegocioPageContent(), ItemCard, MiNegocioChatComposer(), compressImageFile(), Notice, useItemForm(), invalidateCache() (+10 more)
 
-### Community 55 - "auth.service.ts"
-Cohesion: 0.12
-Nodes (13): csv-parse@^6.1.0, AuthService, UserData, hashNewPassword(), validateNewPassword(), verifyPassword(), parsePayrollAccountingMappingTemplate(), PayrollAccountingMappingTemplateRow (+5 more)
+### Community 55 - "sharp-image-compat.test.cjs"
+Cohesion: 0.20
+Nodes (5): assert, create(), formats, sharp, { test }
 
 ### Community 56 - "SalesChatComposer.test.cjs"
-Cohesion: 0.03
-Nodes (64): jsdom@^29.1.1, @testing-library/react@^16.3.3, assert, dom, fs, hot, { JSDOM }, React (+56 more)
+Cohesion: 0.11
+Nodes (12): assert, catalog, dom, fs, { JSDOM }, Module, path, React (+4 more)
 
 ### Community 57 - "fiscal-document.service.ts"
-Cohesion: 0.26
-Nodes (13): Tx, assertInvoiceHistory(), buyerIdentityState(), finiteAmount(), INVOICE_CLOSE_SNAPSHOT_VERSION, invoiceCloseSnapshot(), nonEmpty(), requiresLegacyInvoiceWarning() (+5 more)
+Cohesion: 0.21
+Nodes (15): setup(), technicalConfiguration, Tx, assertInvoiceHistory(), buyerIdentityState(), finiteAmount(), INVOICE_CLOSE_SNAPSHOT_VERSION, invoiceCloseSnapshot() (+7 more)
 
 ### Community 58 - "SaleTaxPanel.tsx"
-Cohesion: 0.11
-Nodes (28): BuyerFiscalFlag, BuyerFiscalFlags, DEFAULT_SALE_FISCAL_FORM, fiscalChipClass(), formatCop(), formatTaxRate(), lineStatus(), normalizeBuyerFiscalFlags() (+20 more)
+Cohesion: 0.08
+Nodes (34): BuyerFiscalFlag, BuyerFiscalFlags, DEFAULT_SALE_FISCAL_FORM, fiscalChipClass(), formatCop(), formatTaxRate(), lineStatus(), normalizeBuyerFiscalFlags() (+26 more)
 
 ### Community 59 - "reserva/[id]/page.tsx"
-Cohesion: 0.15
-Nodes (20): Contrato, CancelReservationButton(), handleConfirm(), CancelReservationButtonProps, capitalize(), formatDate(), generateMetadata(), getReservation() (+12 more)
+Cohesion: 0.13
+Nodes (24): Contrato, CancelReservationButton(), handleConfirm(), CancelReservationButtonProps, capitalize(), formatDate(), generateMetadata(), getReservation() (+16 more)
 
 ### Community 60 - "PayrollNewsSheet"
 Cohesion: 0.24
 Nodes (18): EmployeeCarousel(), formatOneDecimalComma(), formatSettlementDate(), formatSettlementVacationDays(), money(), MoneyLine(), PayrollDeductionsBreakdown(), PayrollNewsSheet() (+10 more)
 
 ### Community 61 - "SaleReceiptModal.tsx"
-Cohesion: 0.13
-Nodes (23): calcTotal(), consumerTaxLabels, downloadFile(), formatDate(), formatMoney(), formatReceiptNumber(), formatTime(), getLineTotal() (+15 more)
+Cohesion: 0.12
+Nodes (25): html2canvas-pro@^2.0.2, calcTotal(), consumerTaxLabels, downloadFile(), formatDate(), formatMoney(), formatReceiptNumber(), formatTime() (+17 more)
 
 ### Community 63 - "payroll.service.spec.ts"
 Cohesion: 0.22
 Nodes (11): createPrismaMock(), defaultContract(), defaultEmployee(), defaultGlobalParameter(), defaultPeriod(), enabledPeriodicPayrollPeriod(), globalParameterForReference(), normalizedOvertimeRates() (+3 more)
 
 ### Community 65 - "dependencies"
-Cohesion: 0.06
-Nodes (31): dependencies, argon2@^0.45.2, bcrypt@^6.0.0, class-transformer@^0.5.1, class-validator@^0.14.3, @nestjs/common@^11.0.1, @nestjs/config@^4.0.3, @nestjs/jwt@^11.0.2 (+23 more)
+Cohesion: 0.07
+Nodes (30): dependencies, argon2@^0.45.2, bcrypt@^6.0.0, class-transformer@^0.5.1, class-validator@^0.14.3, @nestjs/common@^11.0.1, @nestjs/config@^4.0.3, @nestjs/core@^11.0.1 (+22 more)
 
 ### Community 66 - "regimen-simple/page.tsx"
-Cohesion: 0.12
-Nodes (27): formatCurrency(), formatRate(), formatUvt(), Metric(), PERIODS, RegimenSimplePage(), calculateSimpleTaxAnnualReturn(), calculateSimpleTaxPeriod() (+19 more)
+Cohesion: 0.11
+Nodes (27): formatCurrency(), formatRate(), formatUvt(), Metric(), PERIODS, RegimenSimplePage(), businessDateAtCurrentTimeToISOString(), calculateSimpleTaxAnnualReturn() (+19 more)
 
 ### Community 67 - "AccountingService"
 Cohesion: 0.12
@@ -491,43 +487,43 @@ Nodes (3): setup(), AccountingService, AccountingMovementsQueryDto
 
 ### Community 68 - "businessProfile.test.cjs"
 Cohesion: 0.08
-Nodes (20): assert, dom, form(), fs, { JSDOM }, login(), Module, notices (+12 more)
+Nodes (19): assert, dom, form(), fs, { JSDOM }, login(), Module, notices (+11 more)
 
-### Community 69 - "fiscal-documents.ts"
-Cohesion: 0.13
-Nodes (16): FiscalDocumentDetailModal(), FILTERS, FiscalDocumentsView(), FiscalViewFilter, matches(), COLOMBIAN_MUNICIPALITIES, ColombianMunicipality, fallback (+8 more)
+### Community 69 - "SaleCard.tsx"
+Cohesion: 0.10
+Nodes (33): CardActionsMenu(), cardMenuActionClass, menuPosition(), FiscalDocumentDetailModal(), FiscalDocumentMenu(), Props, FILTERS, FiscalDocumentsView() (+25 more)
 
 ### Community 70 - "IngredientsService"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (4): setup(), IngredientsService, createService(), createHarness()
 
 ### Community 71 - "EmployeePayrollEditorSheet"
 Cohesion: 0.22
 Nodes (20): BigInput(), ContractFormSection(), EmployeeFormSection(), EmployeeFormSheet(), EmployeeManagementSheet(), employeeName(), EmployeePayrollEditorSheet(), employeeRole() (+12 more)
 
-### Community 72 - "proxy-address-security.test.cjs"
-Cohesion: 0.29
-Nodes (3): @nestjs/core@^11.0.1, RolesGuard, @nestjs/core
+### Community 72 - "invoicePdf.ts"
+Cohesion: 0.31
+Nodes (8): jspdf@^4.1.0, jspdf-autotable@^5.0.7, calcTotal(), formatDate(), generateInvoicePdf(), money(), jspdf, jspdf-autotable
 
 ### Community 73 - "SaleCreateModal.tsx"
-Cohesion: 0.23
-Nodes (10): BusinessItem, EditableItem, formatMoney(), isAvailableForSale(), ItemThumbnail(), normalizeQty(), SaleCreateModal(), ItemOption (+2 more)
+Cohesion: 0.12
+Nodes (19): AppointmentLookupModal(), formatDate(), minutesToTime(), Props, PublicReservationItem, StatusBadge(), BusinessItem, EditableItem (+11 more)
 
 ### Community 74 - "PublicService"
-Cohesion: 0.11
-Nodes (4): assertNoHiddenPrices(), createService(), PublicService, createService()
+Cohesion: 0.12
+Nodes (3): createService(), PublicService, createService()
 
 ### Community 75 - "SessionBoundary.test.cjs"
-Cohesion: 0.06
-Nodes (34): Autenticación: `/admin`, T7.a y estado final de las Etapas 1 y 2, Causas raíz y correcciones, Estado de las Etapas, No verificado (requiere navegador real), Pruebas, Recomendaciones para staging, Riesgos pendientes, AdminLayout() (+26 more)
+Cohesion: 0.11
+Nodes (14): A, ADMIN, assert, B, dom, fs, { JSDOM }, jwt() (+6 more)
 
 ### Community 76 - "accounting.service.spec.ts"
 Cohesion: 0.13
-Nodes (17): clase(), createManualService(), createService(), createSummaryService(), cuenta(), grupo(), pucCuenta(), pucSubcuenta() (+9 more)
+Nodes (18): clase(), createManualService(), createService(), createSummaryService(), cuenta(), grupo(), pucCuenta(), pucSubcuenta() (+10 more)
 
-### Community 77 - "retrospectiveSale.test.cjs"
-Cohesion: 0.17
-Nodes (13): deviceIdForUser(), generateCreationId(), ManualServiceAttempt, saveManualService(), serviceHasEnded(), assert, data, fs (+5 more)
+### Community 77 - "ref_node_fs"
+Cohesion: 0.07
+Nodes (24): BUSINESS_SLUG_PATTERN, RESERVED_BUSINESS_SLUGS, assert, fs, Module, path, test, ts (+16 more)
 
 ### Community 78 - "RecoveryForms.test.cjs"
 Cohesion: 0.10
@@ -535,19 +531,19 @@ Nodes (13): AppApiError, assert, dom, fs, { JSDOM }, Module, navigation, notices
 
 ### Community 79 - "ItemCategoryPicker.tsx"
 Cohesion: 0.19
-Nodes (15): ItemCatalogFields(), SwitchRow(), CATEGORY_ICONS, CategoryTile(), HUES, ItemCategoryPicker(), norm(), StepPill() (+7 more)
+Nodes (17): Archivos, CATEGORY_ICONS, CategoryTile(), HUES, ItemCategoryPicker(), norm(), StepPill(), ITEM_CATEGORIES (+9 more)
 
 ### Community 80 - "frontend/package.json"
-Cohesion: 0.13
-Nodes (20): devDependencies, eslint@^9, tailwindcss@^4, @tailwindcss/postcss@^4, @testing-library/dom@^10.4.2, @types/node@^20, @types/react@^19, @types/react-dom@^19 (+12 more)
+Cohesion: 0.08
+Nodes (31): eslintConfig, devDependencies, eslint@^9, eslint-config-next@16.4.6, jsdom@^29.1.1, tailwindcss@^4, @tailwindcss/postcss@^4, @testing-library/dom@^10.4.2 (+23 more)
 
 ### Community 81 - "inventory.service.ts"
-Cohesion: 0.16
-Nodes (11): IngredientOperationalState, isIngredientOperational(), deriveItemOptionValidity(), isItemOptionStructurallyOperational(), OptionGroupState, OptionIngredientState, OptionState, deriveRecipeValidity() (+3 more)
+Cohesion: 0.09
+Nodes (22): IngredientOperationalState, isIngredientOperational(), InventorySummaryQueryDto, ApplyInventoryMovementInput, InventoryRequirement, ItemSellability, ItemSellabilityRequest, ItemSellabilityStatus (+14 more)
 
-### Community 82 - "ReservationDrawer.tsx"
-Cohesion: 0.15
-Nodes (19): Item, ItemType, ProductCard(), PublicStorePage(), cn(), ReservationData, ReservationDrawer(), handleConfirm() (+11 more)
+### Community 82 - "ReservationSlotPicker.tsx"
+Cohesion: 0.11
+Nodes (30): Item, ItemType, ProductCard(), PublicStorePage(), cn(), ReservationData, ReservationDrawer(), handleConfirm() (+22 more)
 
 ### Community 83 - "run-reservations-isolated.cjs"
 Cohesion: 0.15
@@ -558,16 +554,16 @@ Cohesion: 0.16
 Nodes (14): MovementBreakdownList(), OPTIONS, mapMovementMetrics(), safeNum(), formatLocalDate(), pad(), periodRange, BreakdownItem (+6 more)
 
 ### Community 85 - "ProductsController"
-Cohesion: 0.14
-Nodes (4): ProductsController, ProductsModule, ProductsService, Auditoría sin cambios necesarios
+Cohesion: 0.15
+Nodes (3): ProductsController, ProductsModule, ProductsService
 
 ### Community 86 - "compilerOptions"
 Cohesion: 0.11
 Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+10 more)
 
 ### Community 87 - "fiscal-document.service.spec.ts"
-Cohesion: 0.20
-Nodes (4): order(), FiscalDocumentRecoveryService, setup(), setupRetryFlow()
+Cohesion: 0.17
+Nodes (6): @nestjs/schedule@^5.0.1, order(), FiscalDocumentRecoveryService, setup(), setupRetryFlow(), @nestjs/schedule
 
 ### Community 88 - "📊 Resumen de la Auditoría Actual"
 Cohesion: 0.14
@@ -585,37 +581,25 @@ Nodes (13): CATEGORY_FIELDS, invalidCategory(), ItemCategoryInput, optionalText(
 Cohesion: 0.12
 Nodes (16): scripts, build, fiscal:reconcile-accepted, format, lint, migrate:images:r2, prisma:backfill:item-stock, start (+8 more)
 
-### Community 94 - "StoreSlugEditor.tsx"
-Cohesion: 0.19
-Nodes (13): Datos, Etapa 4: cambio único de identificador y redirecciones permanentes, Frontend, Integración posterior en la base principal local (no ejecutado), Verificación, Availability, BusinessSlugField(), customSlugError() (+5 more)
+### Community 94 - "Etapa 4: cambio único de identificador y redirecciones permanentes"
+Cohesion: 0.40
+Nodes (4): Datos, Etapa 4: cambio único de identificador y redirecciones permanentes, Integración posterior en la base principal local (no ejecutado), Verificación
 
-### Community 95 - "UpdateItemDto"
-Cohesion: 0.07
-Nodes (6): BadgeInput, CreateItemDto, ScheduleInput, pipe, BadgeInput, UpdateItemDto
+### Community 96 - "PushNotificationsService"
+Cohesion: 0.05
+Nodes (14): @nestjs/throttler@^6.5.0, AuthorizePushDto, PushStatusDto, BrowserPushSubscriptionDto, PushSubscriptionKeysDto, RegisterPushSubscriptionDto, TestPushDto, UnregisterPushSubscriptionDto (+6 more)
 
-### Community 97 - "LoginForm.tsx"
-Cohesion: 0.23
-Nodes (11): EyeIcon(), EyeSlashIcon(), getSettleDuration(), LoginForm(), translateError(), LoginStoreHint(), NavigationTransitionBackdrop(), Direction (+3 more)
-
-### Community 98 - "businesses.service.ts"
-Cohesion: 0.15
-Nodes (23): ADMIN_FACTUS_SELECT, ALLOWED_LOGO_MIME_TYPES, ALLOWED_SOCIAL_TYPES, BUSINESS_PROFILE_SELECT, cleanOptionalHexColor(), cleanOptionalString(), extractFooterColor(), extractFooterLogoFlag() (+15 more)
+### Community 97 - "Etapa 3: dirección pública durante el registro"
+Cohesion: 0.33
+Nodes (5): Archivos, Base utilizada y límites, Contratos y flujo, Etapa 3: dirección pública durante el registro, Verificación ejecutada
 
 ### Community 99 - "cn"
-Cohesion: 0.08
-Nodes (37): HomePage(), MODULE_ICONS, HOME_THREADS, HomeThread, accentStyles, Props, ThreadItem(), ThreadList() (+29 more)
-
-### Community 100 - "mi-negocio/page.tsx"
-Cohesion: 0.11
-Nodes (27): MiNegocioPage(), MiNegocioPageContent(), ConsumptionHistoryTab(), formatOccurredAt(), Props, ItemCard, MiNegocioChatComposer(), ButtonVariant (+19 more)
+Cohesion: 0.05
+Nodes (51): HomePage(), MODULE_ICONS, AdminProductCard(), FOOTER_SOCIAL_TYPES, isHexColor(), Item, MiTiendaPage(), normalizeFooterPhones() (+43 more)
 
 ### Community 101 - "FactusProvider"
-Cohesion: 0.20
+Cohesion: 0.18
 Nodes (4): CachedToken, FactusCredentials, FactusDownloadedArtifact, FactusProvider
-
-### Community 102 - "SettingsService"
-Cohesion: 0.05
-Nodes (6): CreateIcaRateDto, CreateTaxRuleDto, UpsertTaxProfileDto, SettingsController, deriveIncomeTaxDeclarant(), SettingsService
 
 ### Community 103 - "run-reservations-isolated.cjs"
 Cohesion: 0.08
@@ -626,24 +610,20 @@ Cohesion: 0.14
 Nodes (13): compilerOptions, emitDecoratorMetadata, esModuleInterop, experimentalDecorators, incremental, module, outDir, skipLibCheck (+5 more)
 
 ### Community 107 - "lifecycle.test.cjs"
-Cohesion: 0.08
-Nodes (20): assert, fs, harness(), load(), input, path, test, ts (+12 more)
+Cohesion: 0.16
+Nodes (11): assert, fs, loader(), load(), logoutHarness(), path, sandboxWith(), swHarness() (+3 more)
 
 ### Community 109 - "tsconfig.build.json"
 Cohesion: 0.29
 Nodes (6): compilerOptions, outDir, exclude, extends, include, ./tsconfig.json
 
-### Community 110 - "sharp-image-compat.test.cjs"
-Cohesion: 0.20
-Nodes (5): assert, create(), formats, sharp, { test }
-
 ### Community 112 - "SimpleTaxCalculateDto"
 Cohesion: 0.17
 Nodes (3): SimpleTaxCalculateDto, SimpleTaxPayPeriodDto, SimpleTaxUpdatePeriodDto
 
-### Community 114 - "dependencies"
-Cohesion: 0.22
-Nodes (9): dependencies, html2canvas-pro@^2.0.2, lucide-react@^0.564.0, next@16.4.6, react@19.2.3, react-dom@19.2.3, react-hot-toast@^2.6.0, html2canvas-pro (+1 more)
+### Community 114 - "ToastLimitListener.test.cjs"
+Cohesion: 0.12
+Nodes (9): assert, dom, fs, hot, { JSDOM }, React, { render, screen, act, cleanup }, { test, afterEach } (+1 more)
 
 ### Community 115 - "PayrollPage"
 Cohesion: 0.18
@@ -659,15 +639,15 @@ Nodes (9): jest, collectCoverageFrom, coverageDirectory, moduleFileExtensions, r
 
 ### Community 118 - "moduleActivity.ts"
 Cohesion: 0.07
-Nodes (55): AppLayout(), AppLayoutContent(), AgendaEventRow(), formatTimeLabel(), FullScreenPlaceholder(), getInitial(), HomeAgenda(), renderCategoryContent() (+47 more)
+Nodes (56): AppLayout(), AppLayoutContent(), AgendaEventRow(), formatTimeLabel(), FullScreenPlaceholder(), getInitial(), HomeAgenda(), renderCategoryContent() (+48 more)
 
 ### Community 119 - "CreatePublicOrderDto"
 Cohesion: 0.23
 Nodes (3): CreatePublicOrderDto, OptionSelectionInput, OrderItemInput
 
-### Community 120 - "AdminBusinessThread.tsx"
-Cohesion: 0.18
-Nodes (12): InactiveBusinessesPage(), ActiveBusinessesPage(), AdminBusinessThread(), Business, Props, Business, BusinessChatItem(), Props (+4 more)
+### Community 120 - "next"
+Cohesion: 0.08
+Nodes (33): AdminHomePage(), InactiveBusinessesPage(), ActiveBusinessesPage(), EditarIngredientePage(), IngredienteDetailPage(), NuevoIngredientePage(), nextConfig, dependencies (+25 more)
 
 ### Community 121 - "sharp"
 Cohesion: 0.29
@@ -678,24 +658,20 @@ Cohesion: 0.43
 Nodes (7): createSalesService(), fn(), mockAccountingService(), mockInventoryService(), mockItemOptionsService(), mockPrisma(), mockTaxService()
 
 ### Community 123 - "RegisterForm.tsx"
-Cohesion: 0.18
-Nodes (17): ForgotPasswordPage(), RegisterPage(), ResetPasswordPage(), PasswordRequirements(), ValidCheck(), ForgotPasswordForm(), ResetPasswordForm(), submit() (+9 more)
-
-### Community 124 - "push-notifications.service.ts"
-Cohesion: 0.19
-Nodes (11): incrementCounter(), key(), mac(), PUSH_PROOF_TTL_MS, PushProofClaims, signPushProof(), verifyPushProof(), Actor (+3 more)
-
-### Community 125 - "SalesList.tsx"
-Cohesion: 0.24
-Nodes (9): groupSalesByDate(), Props, SalesList(), canGenerateElectronicInvoice(), InvoiceCapability, assert, capability, sale (+1 more)
+Cohesion: 0.11
+Nodes (28): Frontend, ForgotPasswordPage(), RegisterPage(), ResetPasswordPage(), Availability, BusinessSlugField(), customSlugError(), Props (+20 more)
 
 ### Community 127 - "puc.ts"
-Cohesion: 0.17
-Nodes (11): getPucClases(), getPucCuentas(), getPucGrupos(), getPucSubcuentas(), listClases, listGrupos, PucClase, PucCuenta (+3 more)
+Cohesion: 0.18
+Nodes (10): getPucClases(), getPucCuentas(), getPucGrupos(), getPucSubcuentas(), listClases, listGrupos, PucClase, PucCuenta (+2 more)
 
 ### Community 128 - "SalesChatComposer.tsx"
-Cohesion: 0.10
-Nodes (30): ApiBusinessItem, BusinessItem, deriveSaleConceptFromItems(), EditableItem, fallbackConceptForType(), FiscalSalesFilter, formatMoney(), normalizeQty() (+22 more)
+Cohesion: 0.09
+Nodes (33): ApiBusinessItem, BusinessItem, deriveSaleConceptFromItems(), EditableItem, fallbackConceptForType(), FiscalSalesFilter, formatMoney(), normalizeQty() (+25 more)
+
+### Community 129 - "CreateItemDto"
+Cohesion: 0.16
+Nodes (3): BadgeInput, CreateItemDto, ScheduleInput
 
 ### Community 130 - "nest-cli.json"
 Cohesion: 0.33
@@ -706,32 +682,32 @@ Cohesion: 0.27
 Nodes (10): canPreparePayrollPeriod(), choosePayrollPeriod(), ContractManagementSheet(), defaultOvertimeHours(), formatCivilDate(), isPeriodEditable(), isPeriodicPayrollEnabled(), LegacyHeaderCalendar() (+2 more)
 
 ### Community 133 - "Cambios"
-Cohesion: 0.17
-Nodes (11): Abuso de correo, ADMIN, Cambios, Condiciones antes de staging, Contabilidad de la cuota de correo, Datos y compatibilidad, Dependencias, Etapa 2: correcciones posteriores a la auditoría (+3 more)
+Cohesion: 0.20
+Nodes (9): Cambios, Condiciones antes de staging, Contabilidad de la cuota de correo, Datos y compatibilidad, Dependencias, Etapa 2: correcciones posteriores a la auditoría, Pruebas, Push: revocación y reautorización por dispositivo (+1 more)
+
+### Community 134 - "CreateInventoryAdjustmentDto"
+Cohesion: 0.08
+Nodes (3): CreateInventoryAdjustmentDto, CreateInventoryPurchaseDto, CreateInventoryPurchaseReturnDto
 
 ### Community 135 - "reservation-booking.spec.ts"
 Cohesion: 0.09
-Nodes (27): RESERVATION_ERRORS, weekdayOf(), WEEKDAYS, win(), ANCHOR_RESERVATION_ID, BUSINESS_ID, createFakePrisma(), createRoutes() (+19 more)
+Nodes (27): RESERVATION_ERRORS, weekdayOf(), WEEKDAYS, win(), toBookingConflict(), ANCHOR_RESERVATION_ID, BUSINESS_ID, createFakePrisma() (+19 more)
 
 ### Community 136 - "temp-logic-test.js"
 Cohesion: 0.50
 Nodes (4): getWeekday(), main(), prisma, { PrismaClient }
 
-### Community 137 - "@prisma/client"
-Cohesion: 0.04
-Nodes (21): normalizeDecimalString(), normalizeIngredientUnit(), CreateInventoryInitialDto, CreateInventoryPurchaseReturnDto, InventoryKardexGlobalQueryDto, InventoryKardexQueryDto, InventorySummaryQueryDto, ReplaceServiceConsumptionDto (+13 more)
+### Community 137 - "class-validator"
+Cohesion: 0.07
+Nodes (9): normalizeDecimalString(), normalizeIngredientUnit(), pipe, CancelPublicReservationDto, RecipeLineDto, ReplaceRecipeDto, validRequest, class-transformer (+1 more)
 
 ### Community 138 - "Bloque 2.2: confirmación automática de reservas y registro comercial al finalizar"
-Cohesion: 0.13
-Nodes (15): toBookingConflict(), newReservationPolicy(), Bloque 2.2.1: validación funcional (12/11/2026), Bloque 2.2.2: política v2 universal (13/11/2026), Bloque 2.2: confirmación automática de reservas y registro comercial al finalizar, Cancelación, ausencia y eliminación, Edición y espejos, Finalización (`POST /reservations/:id/complete`, `{ "serviceProvided": true }`) (+7 more)
+Cohesion: 0.14
+Nodes (14): newReservationPolicy(), Bloque 2.2.1: validación funcional (12/11/2026), Bloque 2.2.2: política v2 universal (13/11/2026), Bloque 2.2: confirmación automática de reservas y registro comercial al finalizar, Cancelación, ausencia y eliminación, Edición y espejos, Finalización (`POST /reservations/:id/complete`, `{ "serviceProvided": true }`), Idempotencia pública (+6 more)
 
-### Community 141 - "RegisterPushSubscriptionDto"
-Cohesion: 0.18
-Nodes (3): BrowserPushSubscriptionDto, PushSubscriptionKeysDto, RegisterPushSubscriptionDto
-
-### Community 153 - "AppointmentLookupModal.tsx"
-Cohesion: 0.18
-Nodes (12): AppointmentLookupModal(), formatDate(), minutesToTime(), Props, PublicReservationItem, StatusBadge(), ConsultationLine, consultationUrl() (+4 more)
+### Community 153 - "publicPriceLabel"
+Cohesion: 0.11
+Nodes (25): DesktopProductImage(), formatPrice(), ProductCard(), ProductDetailOverlay(), ReelLikeProductView(), CartItem, CartSummary(), Props (+17 more)
 
 ### Community 154 - "Nueva Venta: registro retrospectivo de servicios"
 Cohesion: 0.13
@@ -750,8 +726,8 @@ Cohesion: 0.18
 Nodes (11): Altos, H05 — Recálculo y pago pendiente desactualizado, H06 — Reapertura de contabilizadas, H07 — Prima pagada mutable, H08 — Novedades sin efecto, H09 — Días fuera del período, H10 — Pérdida de comisiones/bonos/deducciones al recalcular, H11 — Auxilios (+3 more)
 
 ### Community 159 - "contabilidad/page.tsx"
-Cohesion: 0.14
-Nodes (22): AccountingFormErrors, buildPucPayload(), buildSelectedPucFromMovement(), ContabilidadPage(), emptyForm, formatCurrency(), getMovementAmount(), MONTH_NAMES (+14 more)
+Cohesion: 0.13
+Nodes (23): AccountingFormErrors, buildPucPayload(), buildSelectedPucFromMovement(), ContabilidadPage(), emptyForm, formatCurrency(), getMovementAmount(), MONTH_NAMES (+15 more)
 
 ### Community 161 - "backend/eslint.config.mjs"
 Cohesion: 0.22
@@ -759,7 +735,7 @@ Nodes (8): @eslint/js@^9.18.0, eslint-plugin-prettier@^5.2.2, globals@^16.0.0, t
 
 ### Community 162 - "reservation-lifecycle.ts"
 Cohesion: 0.10
-Nodes (33): ReservationConflictInterceptor, ActionBlock, actionPolicy(), block(), bogotaNow(), cancellationReason(), commercialBlock(), completionBlock() (+25 more)
+Nodes (37): publicTokenMatches(), ActionBlock, actionPolicy(), block(), bogotaNow(), cancellationReason(), commercialBlock(), CommercialEvidence (+29 more)
 
 ### Community 163 - "Casos reproducibles y evidencia de ejecución"
 Cohesion: 0.22
@@ -817,9 +793,9 @@ Nodes (7): Decisiones jurídicas y de producto que deben quedar documentadas, Di
 Cohesion: 0.29
 Nodes (6): 1. Crear y comprobar aislamiento, 2. Preparar el esquema, sin usar DATABASE_URL habitual, 3. Ejecutar las cinco pruebas, 4. Finalizar el entorno de prueba, PostgreSQL desechable para validar Etapa 1, Si se prefiere PostgreSQL nativo local
 
-### Community 179 - "invoicePdf.ts"
-Cohesion: 0.31
-Nodes (8): jspdf@^4.1.0, jspdf-autotable@^5.0.7, calcTotal(), formatDate(), generateInvoicePdf(), money(), jspdf, jspdf-autotable
+### Community 179 - "CartSummary.test.cjs"
+Cohesion: 0.09
+Nodes (14): assert, dom, fs, { JSDOM }, Module, path, React, {render,screen,fireEvent,cleanup} (+6 more)
 
 ### Community 180 - "Continuación del selector de estados — 13 de noviembre de 2026"
 Cohesion: 0.25
@@ -841,9 +817,9 @@ Nodes (4): Diagnóstico y configuración local, Etapa 2: registro local y presen
 Cohesion: 0.40
 Nodes (4): Deploy on Vercel, Getting Started, Learn More, Web Push
 
-### Community 188 - "sales.service.ts"
-Cohesion: 0.05
-Nodes (15): CommercialEvidence, MIRROR_DETACHED_REASON, NO_SHOW_REASON, AddOrderItemDto, BuyerFiscalContextDto, CreateOrderDto, OrderOptionSelectionInputDto, SalesOrderLineInputDto (+7 more)
+### Community 188 - "SalesOrderLineInputDto"
+Cohesion: 0.07
+Nodes (4): BuyerFiscalContextDto, CreateOrderDto, SalesOrderLineInputDto, UpdateOrderDto
 
 ### Community 190 - "Matriz normativa y vigencias"
 Cohesion: 0.50
@@ -853,65 +829,45 @@ Nodes (4): Matriz normativa y vigencias, Registro de fuentes, Reglas contrastada
 Cohesion: 0.50
 Nodes (4): Comparación de fórmulas: sistema, cliente y norma, Devengos, descuentos y aportes, Errores de la referencia del cliente que no deben implementarse, Prestaciones, liquidaciones y costo
 
-### Community 192 - "publicPreview.ts"
-Cohesion: 0.32
-Nodes (6): TaxPreviewResponse, asFiniteNumber(), normalizePublicTaxPreview(), REQUIRED_TOTALS, assert, test
+### Community 192 - "ReservationSlotPicker.test.cjs"
+Cohesion: 0.14
+Nodes (11): assert, dom, fs, { JSDOM }, Module, path, React, { render, screen, fireEvent, cleanup, act } (+3 more)
 
 ### Community 193 - "Entrega para revisión — 17/11/2026"
 Cohesion: 0.22
 Nodes (8): Archivos de implementación modificados, Cambios funcionales y contratos, Carrera reproducida antes de modificar transacciones, Entrega para revisión — 17/11/2026, Estado de Git, F1.2-A — Verificación, Pruebas y evidencia, Riesgos pendientes y dictamen
 
 ### Community 194 - "carrito/page.tsx"
-Cohesion: 0.43
-Nodes (6): CarritoPage(), CartCard(), CartItem, CheckoutSummary(), MOCK_CART, Row()
+Cohesion: 0.36
+Nodes (8): CarritoPage(), CartCard(), CartItem, CheckoutSummary(), MOCK_CART, Row(), buildWhatsAppUrl(), formatSaleMessage()
 
-### Community 197 - "@nestjs/passport"
-Cohesion: 0.40
-Nodes (3): @nestjs/passport@^11.0.5, JwtAuthGuard, @nestjs/passport
+### Community 198 - "session.test.cjs"
+Cohesion: 0.17
+Nodes (9): assert, fs, harness(), load(), input, path, test, ts (+1 more)
 
-### Community 198 - "proxy-address-security.test.cjs"
-Cohesion: 0.33
-Nodes (3): assert, proxyAddress, test
-
-### Community 204 - "frontend/eslint.config.mjs"
-Cohesion: 0.40
-Nodes (3): eslintConfig, eslint-config-next@16.4.6, eslint-config-next
-
-### Community 207 - "ItemFormContent"
-Cohesion: 0.40
-Nodes (4): BadgeColorSelect(), ItemFormContent(), TimeSelectAMPM(), parsePriceInput()
-
-### Community 208 - ".postOrderMovements"
-Cohesion: 0.15
-Nodes (5): UpdateAccountingMovementDto, businessDateAtCurrentTime(), CivilDateTime, dateTimeParts(), parseAccountingDate()
+### Community 204 - "F1.3 — Categorías inteligentes: implementación local para revisión"
+Cohesion: 0.17
+Nodes (11): Alcance, Diseño, F1.3 — Categorías inteligentes: implementación local para revisión, Funcionamiento, Pruebas ejecutadas, Revisión visual, Riesgos pendientes, Usadas recientemente (+3 more)
 
 ### Community 209 - "accounting.service.ts"
-Cohesion: 0.11
-Nodes (12): AccountingItemType, EXPENSE_GROUPS, ExpenseGroupDefinition, MANUAL_PAID_OUTFLOW_DEFAULTS, MovementWithPucRelations, ORDER_ACCOUNTING_DEFAULTS, OrderForPosting, PostingLine (+4 more)
-
-### Community 214 - "ReservationSlotPicker.tsx"
-Cohesion: 0.18
-Nodes (16): buildMonthGrid(), cn(), endOfMonth(), formatAMPM(), formatMonthParam(), minutesFromTime(), Mode, MONTHS_ES (+8 more)
-
-### Community 216 - "[slug]/page.tsx"
-Cohesion: 0.31
-Nodes (9): decodeSlug(), FALLBACK_METADATA, generateMetadata(), getStoreItems(), Page(), Props, resolveStore, SearchParams (+1 more)
+Cohesion: 0.05
+Nodes (23): AccountingItemType, EXPENSE_GROUPS, ExpenseGroupDefinition, MANUAL_PAID_OUTFLOW_DEFAULTS, MovementWithPucRelations, ORDER_ACCOUNTING_DEFAULTS, OrderForPosting, PostingLine (+15 more)
 
 ### Community 218 - "F1.2-B — implementación local para revisión"
 Cohesion: 0.25
 Nodes (7): Archivos, Componentes y funcionamiento, Contratos y alcance, Dictamen, F1.2-B — implementación local para revisión, Revisión visual y riesgos pendientes, Validación ejecutada
 
-### Community 219 - "scripts"
-Cohesion: 0.50
-Nodes (4): scripts, build, dev, start
-
 ### Community 221 - "Etapa 2: identificadores públicos reservados"
 Cohesion: 0.29
 Nodes (6): Estado y alcance, Etapa 2: identificadores públicos reservados, Futuro despliegue Railway — documentación, no ejecución, Migración y evidencia local, Reproducción segura, Resultados y diagnóstico
 
-### Community 222 - "simple-tax.service.ts"
-Cohesion: 0.08
-Nodes (14): SIMPLE_REGIME_NOT_AVAILABLE, SIMPLE_REGIME_NOT_AVAILABLE_MESSAGE, SimpleRegimeNotAvailableException, ToggleTaxSettingsDto, FiscalMunicipality, getFactusMunicipalities(), SimpleTaxPaymentMethod, BANK (+6 more)
+### Community 222 - "settings.service.ts"
+Cohesion: 0.14
+Nodes (5): SIMPLE_REGIME_NOT_AVAILABLE, SIMPLE_REGIME_NOT_AVAILABLE_MESSAGE, SimpleRegimeNotAvailableException, ToggleTaxSettingsDto, UpsertTaxProfileDto
+
+### Community 224 - "parseAccountingDate"
+Cohesion: 0.60
+Nodes (4): businessDateAtCurrentTime(), CivilDateTime, dateTimeParts(), parseAccountingDate()
 
 ### Community 230 - "Limpieza visual final de Nueva Venta"
 Cohesion: 0.40
@@ -919,23 +875,23 @@ Nodes (4): Archivos modificados en esta iteración, Limitación, Limpieza visual
 
 ## Knowledge Gaps
 - **10 isolated node(s):** `EXPENSE`, `COST`, `CASH`, `TRANSFER`, `INCOME` (+5 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1763 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **63 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1770 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **74 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `@nestjs/common` connect `common/guards/business-active.guard.ts` to `AppService`, `payroll.service.ts`, `ItemOptionsService`, `PrismaService`, `reservation-booking.spec.ts`, `@prisma/client`, `push-notifications.controller.ts`, `@nestjs/common`, `business-slug.ts`, `RecipesService`, `web-push.transport.ts`, `reservation-lifecycle.ts`, `PrismaService`, `availability.service.ts`, `backend/package.json`, `public.service.ts`, `auth.service.ts`, `fiscal-document.service.ts`, `sales.service.ts`, `payroll.service.spec.ts`, `dependencies`, `users.module.ts`, `@nestjs/passport`, `proxy-address-security.test.cjs`, `accounting.service.ts`, `ProductsController`, `fiscal-document.service.spec.ts`, `item-catalog.ts`, `simple-tax.service.ts`, `UpdateItemDto`, `businesses-factus.spec.ts`, `businesses.service.ts`, `FactusProvider`, `sales-price-history.spec.ts`, `push-notifications.service.ts`?**
-  _High betweenness centrality (0.189) - this node is a cross-community bridge._
+- **Why does `@nestjs/common` connect `common/guards/business-active.guard.ts` to `payroll.service.ts`, `backend/package.json`, `ItemOptionsService`, `PrismaService`, `reservation-booking.spec.ts`, `class-validator`, `password-recovery.service.ts`, `@nestjs/common`, `businesses.service.ts`, `web-push.transport.ts`, `AuthController`, `reservation-lifecycle.ts`, `auth.module.ts`, `availability.service.ts`, `movements.controller.ts`, `fiscal-document.service.ts`, `payroll.service.spec.ts`, `dependencies`, `accounting.service.ts`, `inventory.service.ts`, `ProductsController`, `fiscal-document.service.spec.ts`, `item-catalog.ts`, `settings.service.ts`, `PushNotificationsService`, `FactusProvider`, `sales-price-history.spec.ts`?**
+  _High betweenness centrality (0.191) - this node is a cross-community bridge._
 - **What connects `EXPENSE`, `COST`, `CASH` to the rest of the system?**
   _10 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PayrollService` be split into smaller, more focused modules?**
-  _Cohesion score 0.052781289506953225 - nodes in this community are weakly interconnected._
-- **Why does `react` connect `react` to `SalesChatComposer.tsx`, `inventory.ts`, `tienda/page.tsx`, `next`, `cn`, `rut-impuestos/page.tsx`, `useItemForm.test.cjs`, `api`, `usePushNotifications.ts`, `PublicStoreClient.tsx`, `inventario/page.tsx`, `types/sales.ts`, `SaleCard.tsx`, `perfil/page.tsx`, `AppointmentLookupModal.tsx`, `PublicStoreClient.test.cjs`, `factusEntitlement.test.cjs`, `contabilidad/page.tsx`, `ManualPaidOutflowSheet.tsx`, `AccountingChatComposer.tsx`, `lib/api.ts`, `DayPickerCalendar.tsx`, `nomina/page.tsx`, `item.ts`, `SimpleProductDetailSheet.tsx`, `movimientos/page.tsx`, `cancelReservation.test.cjs`, `useItemForm.ts`, `SalesChatComposer.test.cjs`, `SaleTaxPanel.tsx`, `reserva/[id]/page.tsx`, `SaleReceiptModal.tsx`, `carrito/page.tsx`, `regimen-simple/page.tsx`, `businessProfile.test.cjs`, `fiscal-documents.ts`, `SaleCreateModal.tsx`, `SessionBoundary.test.cjs`, `RecoveryForms.test.cjs`, `ItemCategoryPicker.tsx`, `frontend/package.json`, `ReservationDrawer.tsx`, `movements-ui.ts`, `ReservationSlotPicker.tsx`, `[slug]/page.tsx`, `StoreSlugEditor.tsx`, `LoginForm.tsx`, `cn`, `mi-negocio/page.tsx`, `dependencies`, `BusinessDetailPage.tsx`, `moduleActivity.ts`, `AdminBusinessThread.tsx`, `RegisterForm.tsx`?**
+  _Cohesion score 0.05641025641025641 - nodes in this community are weakly interconnected._
+- **Why does `react` connect `react` to `SalesChatComposer.tsx`, `inventory.ts`, `kardex/page.tsx`, `cn`, `rut-impuestos/page.tsx`, `useItemForm.test.cjs`, `api`, `usePushNotifications.ts`, `PublicStoreClient.tsx`, `inventario/page.tsx`, `types/sales.ts`, `salePresentation.test.cjs`, `perfil/page.tsx`, `publicPriceLabel`, `PublicStoreClient.test.cjs`, `factusEntitlement.test.cjs`, `contabilidad/page.tsx`, `ManualPaidOutflowSheet.tsx`, `AccountingChatComposer.tsx`, `lib/api.ts`, `DayPickerCalendar.tsx`, `nomina/page.tsx`, `item.ts`, `LoginForm.tsx`, `movimientos/page.tsx`, `cancelReservation.test.cjs`, `useItemForm.ts`, `CartSummary.test.cjs`, `SalesChatComposer.test.cjs`, `SaleTaxPanel.tsx`, `reserva/[id]/page.tsx`, `SaleReceiptModal.tsx`, `ReservationSlotPicker.test.cjs`, `carrito/page.tsx`, `regimen-simple/page.tsx`, `businessProfile.test.cjs`, `SaleCard.tsx`, `SaleCreateModal.tsx`, `SessionBoundary.test.cjs`, `F1.3 — Categorías inteligentes: implementación local para revisión`, `RecoveryForms.test.cjs`, `ItemCategoryPicker.tsx`, `frontend/package.json`, `ReservationSlotPicker.tsx`, `movements-ui.ts`, `cn`, `ToastLimitListener.test.cjs`, `BusinessDetailPage.tsx`, `moduleActivity.ts`, `next`, `RegisterForm.tsx`?**
   _High betweenness centrality (0.144) - this node is a cross-community bridge._
 - **Should `payroll.service.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.04095172729352551 - nodes in this community are weakly interconnected._
-- **Why does `@prisma/client` connect `PrismaService` to `payroll.service.ts`, `inject_afternoon_schedules.ts`, `ItemOptionsService`, `reservation-booking.spec.ts`, `temp-logic-test.js`, `@prisma/client`, `RegisterPushSubscriptionDto`, `seed.ts`, `business-slug.ts`, `CreateEmployeeContractDto`, `RecipesService`, `reservation-lifecycle.ts`, `PrismaService`, `availability.service.ts`, `common/guards/business-active.guard.ts`, `backend/package.json`, `public.service.ts`, `auth.service.ts`, `CreatePayrollEventDto`, `fiscal-document.service.ts`, `sales.service.ts`, `payroll.service.spec.ts`, `dependencies`, `AccountingService`, `IngredientsService`, `backfill-item-stock.ts`, `accounting.service.spec.ts`, `temp-db-query.js`, `accounting.service.ts`, `check-email-case-collisions.ts`, `inventory.service.ts`, `temp-all-services.js`, `CreatePayrollAdjustmentDto`, `simple-tax.service.ts`, `check_schedules.ts`, `prepare_split_schedule_test.ts`, `temp-db-check.ts`, `businesses.service.ts`, `SettingsService`, `sharp`, `sales-price-history.spec.ts`, `push-notifications.service.ts`?**
-  _High betweenness centrality (0.112) - this node is a cross-community bridge._
+  _Cohesion score 0.0431960049937578 - nodes in this community are weakly interconnected._
+- **Why does `@prisma/client` connect `PrismaService` to `payroll.service.ts`, `backend/package.json`, `ItemOptionsService`, `reservation-booking.spec.ts`, `temp-logic-test.js`, `class-validator`, `seed.ts`, `businesses.service.ts`, `CreateEmployeeContractDto`, `web-push.transport.ts`, `reservation-lifecycle.ts`, `availability.service.ts`, `common/guards/business-active.guard.ts`, `CreatePayrollEventDto`, `fiscal-document.service.ts`, `payroll.service.spec.ts`, `dependencies`, `AccountingService`, `IngredientsService`, `backfill-item-stock.ts`, `accounting.service.spec.ts`, `ref_node_fs`, `temp-db-query.js`, `accounting.service.ts`, `inventory.service.ts`, `settings.service.ts`, `UpdateBusinessConfigDto`, `SettingsService`, `sharp`, `sales-price-history.spec.ts`, `temp-all-services.js`?**
+  _High betweenness centrality (0.113) - this node is a cross-community bridge._
 - **Should `inventory.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.05025773195876289 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05648148148148148 - nodes in this community are weakly interconnected._

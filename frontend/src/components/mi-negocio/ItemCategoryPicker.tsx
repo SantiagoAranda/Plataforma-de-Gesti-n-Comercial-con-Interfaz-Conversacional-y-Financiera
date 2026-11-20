@@ -2,12 +2,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowLeft, Backpack, Baby, BookOpen, BrushCleaning, Car, Check, ChevronRight, CircleCheck, CircleSlash, Cloud, CookingPot,
+  ArrowLeft, Backpack, Baby, BookOpen, BrushCleaning, Car, Check, ChevronRight, CircleCheck, CircleSlash, Clock, Cloud, CookingPot,
   Dumbbell, Ellipsis, Footprints, Gem, Gift, Guitar, HardHat, HeartPulse, Palette, PawPrint, PencilRuler, PersonStanding,
   Plug, Puzzle, Search, Shirt, Smartphone, Sofa, Sprout, Tags, Tent, Utensils, WandSparkles, Wrench, X, type LucideIcon,
 } from "lucide-react";
 import { ItemCatalogAttributes } from "@/src/types/item";
 import { ITEM_CATEGORIES, OTHER_CATEGORY_ID } from "@/src/lib/itemCategories";
+import { CategoryChoice, recentCategories, suggestCategory } from "@/src/lib/itemCategorySuggestions";
 
 // Frontend-only: kept out of ITEM_CATEGORIES so the backend parity test stays intact.
 // lucide equivalents of the prototype's CAT_ICONS (Font Awesome); person-dress and child have no exact match.
@@ -47,10 +48,13 @@ function StepPill({ n, label, detail, active, done, onClick }: {
   </button>;
 }
 
-export function ItemCategoryPicker({ value, onChange }: {
+export function ItemCategoryPicker({ value, onChange, name = "", recentItems = [] }: {
   value: ItemCatalogAttributes; onChange: (value: ItemCatalogAttributes) => void;
+  name?: string; recentItems?: Parameters<typeof recentCategories>[0];
 }) {
   const [open, setOpen] = useState(false);
+  // Snapshot on open: a list refresh while the sheet is open must not move the chips under the finger.
+  const [recents, setRecents] = useState<CategoryChoice[]>([]);
   const [step, setStep] = useState<1 | 2>(1);
   const [draftCat, setDraftCat] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -70,7 +74,7 @@ export function ItemCategoryPicker({ value, onChange }: {
   const goStep = (next: 1 | 2) => { setStep(next); setQuery(""); };
   const openPicker = () => {
     setDraftCat(value.categoryId ?? null); setCustomCat(value.customCategoryName ?? ""); setCustomSub(value.customSubcategoryName ?? "");
-    goStep(1); setOpen(true);
+    setRecents(recentCategories(recentItems)); goStep(1); setOpen(true);
   };
   const close = () => { setOpen(false); triggerRef.current?.focus(); };
   const commit = (next: Pick<ItemCatalogAttributes, "categoryId" | "subcategoryId" | "customCategoryName" | "customSubcategoryName">) => {
@@ -98,6 +102,17 @@ export function ItemCategoryPicker({ value, onChange }: {
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
   };
+
+  const pickChoice = (choice: CategoryChoice) =>
+    commit({ ...choice, customCategoryName: null, customSubcategoryName: null });
+  const choiceLabels = (choice: CategoryChoice) => {
+    const cat = ITEM_CATEGORIES.find(entry => entry.id === choice.categoryId);
+    return [cat?.label ?? "", cat?.subcategories.find(entry => entry.id === choice.subcategoryId)?.label] as const;
+  };
+  // Offered only while nothing is chosen, so it can never displace a manual or saved selection.
+  const suggestion = value.categoryId ? null : suggestCategory(name);
+  const suggestionText = suggestion ? choiceLabels(suggestion).filter(Boolean).join(" › ") : "";
+  const shownName = name.trim().length > 22 ? `${name.trim().slice(0, 22)}…` : name.trim();
 
   const q = norm(query);
   const categories = ITEM_CATEGORIES.filter(entry => !q || norm(entry.label).includes(q));
@@ -159,6 +174,29 @@ export function ItemCategoryPicker({ value, onChange }: {
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8">
           {step === 1 ? <>
+            {!q && suggestion && <button type="button" onClick={() => pickChoice(suggestion)} aria-label={`Usar sugerencia: ${suggestionText}`}
+                className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-indigo-50 px-3 py-3 text-left transition-transform active:scale-[0.99]">
+                <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm"><WandSparkles size={16} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-sky-700">Sugerida para «{shownName}»</span>
+                  <span className="block truncate text-sm font-semibold text-slate-800">{suggestionText}</span>
+                </span>
+                <span aria-hidden className="text-[11px] font-bold text-sky-700">Usar</span>
+              </button>}
+            {!q && recents.length > 0 && <>
+              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Clock size={11} aria-hidden />Usadas recientemente</p>
+              <div className="-mx-5 mb-4 flex gap-2 overflow-x-auto px-5 pb-1">
+                {recents.map(choice => {
+                  const [cat, sub] = choiceLabels(choice);
+                  return <button type="button" key={`${choice.categoryId}|${choice.subcategoryId}`} onClick={() => pickChoice(choice)}
+                    aria-label={`Usar ${cat}${sub ? ` › ${sub}` : ", sin subcategoría"}`}
+                    className="flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pl-1.5 pr-3 transition-colors hover:bg-slate-50 active:scale-95">
+                    <CategoryTile id={choice.categoryId} size="h-6 w-6 rounded-full!" iconSize={12} />
+                    <span className="whitespace-nowrap text-xs font-semibold text-slate-700">{sub ?? cat}</span>
+                  </button>;
+                })}
+              </div>
+            </>}
             {!q && <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Todas las categorías <span className="text-slate-300">· {ITEM_CATEGORIES.length}</span></p>}
             {q && !categories.length ? emptyState : <div className="grid grid-cols-3 gap-2">
               {!q && <button type="button" onClick={() => commit({ categoryId: null, subcategoryId: null, customCategoryName: null, customSubcategoryName: null })}

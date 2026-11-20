@@ -3,6 +3,11 @@
 Fecha: 19/11/2026. Rama: Fase1. HEAD: 16ac7cf698795b088d87a20500daaef072df22dd.
 Sin commits, staging, push, merge, rebase ni despliegue. develop permanece en ese mismo hash.
 
+> **Estado actualizado (20/11/2026):** el texto de arriba describe el momento de la entrega y se conserva como registro histórico.
+> F1.2-A y F1.2-B quedaron confirmadas en `Fase1` con el commit `3608738` («Primera version frontend: Modulo Ventas»);
+> las correcciones visuales de Mi Negocio, en `aba1ee8`. `develop` está en `0519ab6` y no contiene esos commits.
+> Los resultados de pruebas registrados abajo no se volvieron a modificar. Continuación: `docs/verification/f1.3/README.md`.
+
 ## Archivos
 
 Modificados por F1.2-B:

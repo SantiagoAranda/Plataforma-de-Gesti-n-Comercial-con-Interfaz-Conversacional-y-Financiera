@@ -362,7 +362,7 @@ function MiNegocioPageContent() {
         type={type}
         submitDisabled={hasScheduleOverlap || form.isLoadingDetail}
       >
-        {form.isLoadingDetail ? <p role="status">Cargando detalle...</p> : <fieldset disabled={isSubmitting}><ItemFormContent {...form.contentProps} /></fieldset>}
+        {form.isLoadingDetail ? <p role="status">Cargando detalle...</p> : <fieldset disabled={isSubmitting}><ItemFormContent {...form.contentProps} recentItems={items} /></fieldset>}
       </MiNegocioChatComposer>}
 
       <ItemDetailModal
