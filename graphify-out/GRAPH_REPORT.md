@@ -1,7 +1,7 @@
-# Graph Report - Plataforma-de-Gesti-n-Comercial-con-Interfaz-Conversacional-y-Financiera  (2026-11-17)
+# Graph Report - Plataforma-de-Gesti-n-Comercial-con-Interfaz-Conversacional-y-Financiera  (2026-11-20)
 
 ## Corpus Check
-- 695 files · ~507,235 words
+- 695 files · ~507,236 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 20 file(s) not represented in the graph (top: .csv 10, (none) 4, .example 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9276f068`
+- Built from commit: `16ac7cf6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -520,7 +520,7 @@ Nodes (5): SIMPLE_REGIME_NOT_AVAILABLE, SIMPLE_REGIME_NOT_AVAILABLE_MESSAGE, Sim
 
 ### Community 80 - "frontend/package.json"
 Cohesion: 0.05
-Nodes (48): eslintConfig, dependencies, html2canvas-pro@^2.0.2, jspdf@^4.1.0, jspdf-autotable@^5.0.7, lucide-react@^0.564.0, next@16.4.4, react@19.2.3 (+40 more)
+Nodes (48): eslintConfig, dependencies, html2canvas-pro@^2.0.2, jspdf@^4.1.0, jspdf-autotable@^5.0.7, lucide-react@^0.564.0, next@16.4.6, react@19.2.3 (+40 more)
 
 ### Community 81 - "inventory.service.ts"
 Cohesion: 0.09
@@ -855,13 +855,13 @@ Nodes (4): Archivos modificados en esta iteración, Limitación, Limpieza visual
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `@nestjs/common` connect `@nestjs/common` to `payroll.service.ts`, `ItemOptionsService`, `@prisma/client`, `reservation-booking.spec.ts`, `CreateInventoryPurchaseDto`, `class-validator`, `simple-tax.service.ts`, `PushNotificationsService`, `BusinessesService`, `sales.controller.ts`, `RecipesService`, `push-notifications.service.ts`, `reservation-lifecycle.ts`, `backend/package.json`, `PrismaService`, `availability.service.ts`, `@nestjs/common`, `public.service.ts`, `password-recovery.service.ts`, `accounting.service.ts`, `movements.controller.ts`, `fiscal-document.service.ts`, `payroll.service.spec.ts`, `dependencies`, `public.controller.ts`, `businesses-factus.spec.ts`, `settings.service.ts`, `inventory.service.ts`, `ProductsController`, `fiscal-document.service.spec.ts`, `item-catalog.ts`, `items.service.ts`, `simple-tax.service.spec.ts`, `businesses.service.ts`, `FactusProvider`, `sales-price-history.spec.ts`?**
-  _High betweenness centrality (0.194) - this node is a cross-community bridge._
+  _High betweenness centrality (0.193) - this node is a cross-community bridge._
 - **What connects `EXPENSE`, `COST`, `CASH` to the rest of the system?**
   _10 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PayrollService` be split into smaller, more focused modules?**
   _Cohesion score 0.052781289506953225 - nodes in this community are weakly interconnected._
 - **Why does `react` connect `react` to `SalesChatComposer.tsx`, `inventory.ts`, `tienda/page.tsx`, `cn`, `rut-impuestos/page.tsx`, `mi-negocio/page.tsx`, `api`, `usePushNotifications.ts`, `PublicStoreClient.tsx`, `inventario/page.tsx`, `SaleCard.tsx`, `perfil/page.tsx`, `ItemDetailModal.tsx`, `factusEntitlement.test.cjs`, `contabilidad/page.tsx`, `ManualPaidOutflowSheet.tsx`, `inventory.ts`, `AccountingChatComposer.tsx`, `(app)/layout.tsx`, `HomeAgenda.tsx`, `DayPickerCalendar.tsx`, `nomina/page.tsx`, `react`, `ExpandableServiceConsumptionCard.tsx`, `cancelReservation.test.cjs`, `SimpleProductDetailSheet.tsx`, `CartSummary.tsx`, `SaleTaxPanel.tsx`, `reserva/[id]/page.tsx`, `SaleReceiptModal.tsx`, `regimen-simple/page.tsx`, `businessProfile.test.cjs`, `SaleCreateModal.tsx`, `lib/api.ts`, `RecoveryForms.test.cjs`, `frontend/package.json`, `ReservationSlotPicker.tsx`, `react-hot-toast`, `movements-ui.ts`, `movimientos/page.tsx`, `SalesChatComposer.test.cjs`, `cn`, `SessionBoundary.test.cjs`, `useFiscalMunicipalities.ts`, `WhatsappComposer.tsx`, `moduleActivity.ts`, `RegisterForm.tsx`, `ReservationSlotPicker.test.cjs`?**
-  _High betweenness centrality (0.180) - this node is a cross-community bridge._
+  _High betweenness centrality (0.179) - this node is a cross-community bridge._
 - **Should `payroll.service.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.04095172729352551 - nodes in this community are weakly interconnected._
 - **Why does `@prisma/client` connect `@prisma/client` to `payroll.service.ts`, `ItemOptionsService`, `CreateInventoryPurchaseDto`, `reservation-booking.spec.ts`, `temp-logic-test.js`, `class-validator`, `simple-tax.service.ts`, `CreatePayrollEventDto`, `seed.ts`, `BusinessesService`, `CreateEmployeeContractDto`, `push-notifications.service.ts`, `reservation-lifecycle.ts`, `backend/package.json`, `PrismaService`, `availability.service.ts`, `@nestjs/common`, `public.service.ts`, `accounting.service.ts`, `fiscal-document.service.ts`, `payroll.service.spec.ts`, `dependencies`, `SettingsService`, `IngredientsService`, `accounting.service.spec.ts`, `settings.service.ts`, `inventory.service.ts`, `CreateAccountingMovementDto`, `items.service.ts`, `simple-tax.service.spec.ts`, `businesses.service.ts`, `CreatePayrollAdjustmentDto`, `sales-price-history.spec.ts`?**
