@@ -1,11 +1,26 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { Weekday } from '@prisma/client';
+import { reservationTransitionBlock, lifecycleConflict, cancellationReason, isPolicyV2, newReservationPolicy } from '../reservations/reservation-lifecycle';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AvailabilityService,
+  formatDateKey,
+  RESERVATION_ERRORS,
+  toBookingConflict,
+} from '../availability/availability.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 @Injectable()
 export class ReservationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional()
+    private availability: AvailabilityService = new AvailabilityService(prisma),
+  ) {}
 
   private parseDateOnly(value: string) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
@@ -34,157 +49,6 @@ export class ReservationsService {
     };
   }
 
-  private formatDateOnly(value: Date) {
-    const year = value.getUTCFullYear();
-    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(value.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private formatTime(minutes: number) {
-    const h = Math.floor(minutes / 60)
-      .toString()
-      .padStart(2, '0');
-    const m = (minutes % 60).toString().padStart(2, '0');
-    return `${h}:${m}`;
-  }
-
-  private getWeekday(date: Date): Weekday {
-    const weekdayMap: Record<number, Weekday> = {
-      0: 'SUN',
-      1: 'MON',
-      2: 'TUE',
-      3: 'WED',
-      4: 'THU',
-      5: 'FRI',
-      6: 'SAT',
-    };
-
-    return weekdayMap[date.getUTCDay()];
-  }
-
-  private async getAvailabilitySlotsForItem(
-    businessId: string,
-    item: { id: string; durationMinutes: number | null },
-    date: Date,
-    hasSpecificWindows: boolean,
-    excludeReservationId?: string,
-  ) {
-    const weekday = this.getWeekday(date);
-
-    const dateKey = [
-      date.getUTCFullYear(),
-      String(date.getUTCMonth() + 1).padStart(2, '0'),
-      String(date.getUTCDate()).padStart(2, '0'),
-    ].join('-');
-
-    const [windows, reservations, blocks] = await Promise.all([
-      this.prisma.serviceScheduleWindow.findMany({
-        where: {
-          businessId,
-          weekday,
-          itemId: hasSpecificWindows ? item.id : null,
-        },
-        orderBy: { startMinute: 'asc' },
-      }),
-      this.prisma.reservation.findMany({
-        where: {
-          businessId,
-          itemId: item.id,
-          date,
-          status: { not: 'CANCELLED' },
-          ...(excludeReservationId
-            ? { id: { not: excludeReservationId } }
-            : {}),
-        },
-        select: { startMinute: true, endMinute: true },
-      }),
-      this.prisma.serviceScheduleBlock.findMany({
-        where: {
-          businessId,
-          date,
-          OR: [{ itemId: item.id }, { itemId: null }],
-        },
-      }),
-    ]);
-
-    if (windows.length === 0) return [];
-
-    // 1. Windows are already filtered at the database query level based on item-specific priority.
-    const filteredWindows = windows;
-
-    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
-    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
-    for (const w of filteredWindows) {
-      const last = mergedWindows[mergedWindows.length - 1];
-      if (last && last.endMinute >= w.startMinute) {
-        last.endMinute = Math.max(last.endMinute, w.endMinute);
-      } else {
-        mergedWindows.push({
-          startMinute: w.startMinute,
-          endMinute: w.endMinute,
-        });
-      }
-    }
-
-    const duration = item.durationMinutes ?? 60;
-    // Fixed 60-minute step — NEVER use durationMinutes as step or slots will be skipped.
-    const step = 60;
-    const slots: string[] = [];
-
-    // Compute "today" and current time in the business timezone (America/Bogota).
-    // Use a YYYY-MM-DD string key comparison — avoids getTime() drift from toLocaleString parsing.
-    const nowInBusiness = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    );
-    const todayKey = [
-      nowInBusiness.getFullYear(),
-      String(nowInBusiness.getMonth() + 1).padStart(2, '0'),
-      String(nowInBusiness.getDate()).padStart(2, '0'),
-    ].join('-');
-    const isToday = dateKey === todayKey;
-    // Use < (not <=) so a slot that starts exactly at the current minute is still offered.
-    const currentMinutes =
-      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
-
-    for (const window of mergedWindows) {
-      // Align cursor to the next full-hour boundary (slots are always HH:00).
-      let cursor = window.startMinute;
-      if (cursor % 60 !== 0) {
-        cursor = cursor + (60 - (cursor % 60));
-      }
-
-      while (cursor + duration <= window.endMinute) {
-        const start = cursor;
-        const end = cursor + duration;
-
-        if (isToday && start < currentMinutes) {
-          cursor += step;
-          continue;
-        }
-
-        const overlap = reservations.some(
-          (res) =>
-            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
-        );
-
-        const blocked = blocks.some((block) => {
-          if (block.startMinute === null && block.endMinute === null)
-            return true;
-          return (
-            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
-          );
-        });
-
-        if (!overlap && !blocked) slots.push(this.formatTime(start));
-
-        cursor += step;
-      }
-    }
-
-    return slots;
-  }
-
   private async getBusinessService(businessId: string, itemId: string) {
     const item = await this.prisma.item.findFirst({
       where: {
@@ -205,9 +69,7 @@ export class ReservationsService {
         select: { id: true },
       });
       if (service) {
-        throw new BadRequestException(
-          'El servicio no estÃ¡ disponible para nuevas reservas.',
-        );
+        throw new BadRequestException(RESERVATION_ERRORS.serviceInactive);
       }
       throw new BadRequestException('Invalid service');
     }
@@ -216,48 +78,32 @@ export class ReservationsService {
   }
 
   async create(businessId: string, dto: CreateReservationDto) {
-    if (dto.startMinute >= dto.endMinute) {
-      throw new BadRequestException('Invalid time range');
-    }
+    return this.prisma
+      .$transaction(async (tx) => {
+        const slot = await this.availability.reserveSlot(tx, {
+          businessId,
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+        });
 
-    await this.getBusinessService(businessId, dto.itemId);
-
-    const dateOnly = this.parseDateOnly(dto.date);
-
-    const overlapping = await this.prisma.reservation.findFirst({
-      where: {
-        businessId,
-        itemId: dto.itemId,
-        date: dateOnly,
-        status: {
-          not: 'CANCELLED',
-        },
-        AND: [
-          {
-            startMinute: { lt: dto.endMinute },
+        return tx.reservation.create({
+          data: {
+            businessId,
+            itemId: slot.itemId,
+            customerName: dto.customerName?.trim() || null,
+            customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+            ...(await newReservationPolicy(tx, businessId, slot.itemId)),
           },
-          {
-            endMinute: { gt: dto.startMinute },
-          },
-        ],
-      },
-    });
-
-    if (overlapping) {
-      throw new BadRequestException('Time slot already booked');
-    }
-
-    return this.prisma.reservation.create({
-      data: {
-        businessId,
-        itemId: dto.itemId,
-        customerName: dto.customerName?.trim() || null,
-        customerWhatsapp: dto.customerWhatsapp?.trim() || null,
-        date: dateOnly,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-      },
-    });
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
   }
 
   async findByDate(businessId: string, date: string) {
@@ -276,17 +122,12 @@ export class ReservationsService {
 
   async getAvailability(businessId: string, itemId: string, date: string) {
     const item = await this.getBusinessService(businessId, itemId);
-    const dateOnly = this.parseDateOnly(date);
-    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
-      where: { businessId, itemId: item.id },
-    });
-    const hasSpecificWindows = specificWindowsCount > 0;
-    return this.getAvailabilitySlotsForItem(
+    return this.availability.getSlots({
       businessId,
-      item,
-      dateOnly,
-      hasSpecificWindows,
-    );
+      itemId: item.id,
+      durationMinutes: item.durationMinutes,
+      date: this.parseDateOnly(date),
+    });
   }
 
   async getAvailabilityCalendar(
@@ -295,96 +136,38 @@ export class ReservationsService {
     month: string,
   ) {
     const item = await this.getBusinessService(businessId, itemId);
-    const { year, monthIndex } = this.parseMonth(month);
-    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
-    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-
-    const nowInBusiness = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    );
-    const today = new Date(
-      Date.UTC(
-        nowInBusiness.getFullYear(),
-        nowInBusiness.getMonth(),
-        nowInBusiness.getDate(),
-        0,
-        0,
-        0,
-        0,
-      ),
-    );
-
-    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
-      where: { businessId, itemId: item.id },
+    return this.availability.getAvailableDates({
+      businessId,
+      itemId: item.id,
+      durationMinutes: item.durationMinutes,
+      ...this.parseMonth(month),
     });
-    const hasSpecificWindows = specificWindowsCount > 0;
+  }
 
-    const cursor = new Date(firstDay);
-    const availableDates: string[] = [];
-
-    while (cursor <= lastDay) {
-      if (cursor >= today) {
-        const slots = await this.getAvailabilitySlotsForItem(
+  // PENDING only: a CONFIRMED reservation carries inventory and accounting, whose
+  // reversal is SalesService.cancel(RESERVATION). Confirmation lives in SalesService too.
+  async cancel(businessId: string, id: string, reasonInput?: unknown) {
+    const reason = cancellationReason(reasonInput);
+    return this.prisma.$transaction(async (tx) => {
+      const { reservation, alreadyCancelled } =
+        await this.availability.lockReservationForCancellation(
+          tx,
           businessId,
-          item,
-          new Date(cursor),
-          hasSpecificWindows,
+          id,
         );
-
-        if (slots.length > 0) {
-          availableDates.push(this.formatDateOnly(cursor));
-        }
+      if (alreadyCancelled) return reservation;
+      const restriction = reservationTransitionBlock(reservation, 'cancel', 'internal');
+      if (restriction) lifecycleConflict(restriction);
+      // Policy 2 CONFIRMED carries no effects (checked above), so nothing needs Sales' reversal.
+      if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
+        throw new ConflictException(
+          RESERVATION_ERRORS.confirmedCancelRequiresSales,
+        );
       }
-
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    return availableDates;
-  }
-
-  async cancel(businessId: string, id: string) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
-
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-      },
-    });
-  }
-
-  async confirm(businessId: string, id: string) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
-
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
-
-    if (reservation.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING reservations can be confirmed',
-      );
-    }
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        status: 'CONFIRMED',
-      },
+      return tx.reservation.update({
+        where: { id },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
+      });
     });
   }
 
@@ -393,60 +176,59 @@ export class ReservationsService {
     id: string,
     dto: { date: string; startMinute: number; endMinute: number },
   ) {
-    if (dto.startMinute >= dto.endMinute) {
-      throw new BadRequestException('Invalid time range');
-    }
+    return this.prisma
+      .$transaction(async (tx) => {
+        const reservation = await this.availability.lockReservationRow(
+          tx,
+          businessId,
+          id,
+        );
 
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
+        if (!reservation) {
+          throw new BadRequestException(RESERVATION_ERRORS.notFound);
+        }
 
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
+        const restriction = reservationTransitionBlock(reservation, 'reschedule');
+        if (restriction) lifecycleConflict(restriction);
+        await this.availability.assertNotSalesMirror(tx, businessId, id);
+        if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
+          throw new BadRequestException(
+            'Solo se pueden reprogramar reservas pendientes.',
+          );
+        }
 
-    if (reservation.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING reservations can be rescheduled',
-      );
-    }
+        // Same slot: nothing moves, so historical values are kept untouched.
+        if (
+          dto.date === formatDateKey(reservation.date) &&
+          dto.startMinute === reservation.startMinute
+        ) {
+          return reservation;
+        }
 
-    const dateOnly = this.parseDateOnly(dto.date);
+        const slot = await this.availability.reserveSlot(tx, {
+          businessId,
+          itemId: reservation.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+          excludeReservationId: id,
+          allowInactiveService: true,
+          extraLockKeys: [
+            { businessId, itemId: reservation.itemId, date: reservation.date },
+          ],
+        });
 
-    const overlapping = await this.prisma.reservation.findFirst({
-      where: {
-        businessId,
-        itemId: reservation.itemId,
-        date: dateOnly,
-        status: {
-          not: 'CANCELLED',
-        },
-        id: { not: id },
-        AND: [
-          {
-            startMinute: { lt: dto.endMinute },
+        return tx.reservation.update({
+          where: { id },
+          data: {
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
           },
-          {
-            endMinute: { gt: dto.startMinute },
-          },
-        ],
-      },
-    });
-
-    if (overlapping) {
-      throw new BadRequestException('Time slot already booked');
-    }
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        date: dateOnly,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-      },
-    });
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
   }
 }

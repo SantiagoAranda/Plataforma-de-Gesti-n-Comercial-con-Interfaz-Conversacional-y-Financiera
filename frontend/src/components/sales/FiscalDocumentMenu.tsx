@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Download, Eye, FileWarning, MoreVertical, RefreshCw, RotateCcw, Send } from "lucide-react";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 
+import CardActionsMenu, { cardMenuActionClass } from "./CardActionsMenu";
+
 type Props = {
+  leadingActions?: (close: () => void) => ReactNode;
   document: FiscalDocument;
   canEmit?: boolean;
   creditNote?: FiscalDocument;
@@ -23,13 +26,13 @@ export default function FiscalDocumentMenu(props: Props) {
   const [downloadsOpen, setDownloadsOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open || props.leadingActions) return;
     const close = (event: MouseEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     globalThis.document.addEventListener("mousedown", close);
     return () => globalThis.document.removeEventListener("mousedown", close);
-  }, [open]);
+  }, [open, props.leadingActions]);
 
   const run = (action: () => void) => {
     setOpen(false);
@@ -38,21 +41,9 @@ export default function FiscalDocumentMenu(props: Props) {
   };
   const hasArtifact = (kind: "pdf" | "xml") =>
     document.artifacts.some((artifact) => artifact.kind.toLowerCase() === kind);
-  const actionClass = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
+  const actionClass = props.leadingActions ? cardMenuActionClass : "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
 
-  return (
-    <div ref={root} className="relative">
-      <button
-        type="button"
-        aria-label="Opciones de facturación electrónica"
-        aria-expanded={open}
-        onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}
-        className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-50"
-      >
-        <MoreVertical className="h-4 w-4" />
-      </button>
-      {open && (
-        <div onClick={(event) => event.stopPropagation()} className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
+  const actions = <>
           {(["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"] as const).includes(document.status as "PENDING" | "PROCESSING" | "SUBMITTED_PENDING_DIAN") && <button className={actionClass} onClick={() => run(() => props.onView(document))}><Eye size={14} />Ver estado</button>}
           {props.canEmit !== false && document.status === "PENDING" && <button className={actionClass} onClick={() => run(() => props.onDispatch(document))}><Send size={14} />Procesar ahora <span className="ml-auto text-[9px] font-normal text-slate-400">Opcional</span></button>}
           {props.canEmit !== false && document.status === "RETRYABLE_FAILURE" && <button className={actionClass} onClick={() => run(() => props.onRetry(document))}><RefreshCw size={14} />Reintentar</button>}
@@ -79,6 +70,23 @@ export default function FiscalDocumentMenu(props: Props) {
               ))}
             </div>
           )}
+  </>;
+  if (props.leadingActions) return <CardActionsMenu open={open} onOpenChange={setOpen}>{props.leadingActions(() => { setOpen(false); setDownloadsOpen(false); })}{actions}</CardActionsMenu>;
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-label="Opciones de facturación electrónica"
+        aria-expanded={open}
+        onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}
+        className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-50"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div onClick={(event) => event.stopPropagation()} className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
+          {actions}
         </div>
       )}
     </div>

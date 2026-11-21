@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar Venta - SACTEC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family:'Inter',sans-serif; background:#1a2332; -webkit-tap-highlight-color:transparent; }
+        .tnum { font-variant-numeric:tabular-nums; }
+        .sheet { border-radius:36px; box-shadow:0 25px 50px -12px rgba(0,0,0,.4); }
+
+        /* Selectores segmentados */
+        .seg { display:flex; background:#edf1f6; border-radius:16px; padding:4px; }
+        .seg button { flex:1; padding:10px 0; border-radius:12px; font-size:13.5px; font-weight:600; color:#64748b; transition:background-color .2s, color .2s, box-shadow .2s; }
+        .seg button[aria-pressed="true"] { background:#fff; color:#0f172a; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+
+        /* Secciones plegables */
+        .fold { display:grid; grid-template-rows:0fr; transition:grid-template-rows .25s ease; }
+        .fold.open { grid-template-rows:1fr; }
+        .fold > div { min-height:0; overflow:hidden; }
+        .chev { transition:transform .2s ease; }
+        [aria-expanded="true"] .chev { transform:rotate(180deg); }
+
+        /* AIU */
+        .aiu-check { appearance:none; -webkit-appearance:none; flex:none; width:26px; height:26px; border-radius:8px; border:2px solid #cbd5e1; background:#fff center/16px no-repeat; transition:background-color .15s, border-color .15s; cursor:pointer; }
+        .aiu-check:checked { background-color:#0c3558; border-color:#0c3558; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8'/%3E%3C/svg%3E"); }
+        .aiu-check:focus-visible, .seg button:focus-visible, .link:focus-visible { outline:2px solid #0c3558; outline-offset:2px; }
+        .aiu-field { display:flex; align-items:center; height:44px; padding:0 12px; border-radius:14px; background:#fff; border:1px solid #e2e8f0; color:#94a3b8; font-size:16px; font-weight:500; transition:border-color .15s, box-shadow .15s; }
+        .aiu-field:focus-within { border-color:#0c3558; box-shadow:0 0 0 3px rgba(12,53,88,.12); }
+        .aiu-field.util { border-color:#f2c26b; }
+        .aiu-field.util:focus-within { border-color:#b45309; box-shadow:0 0 0 3px rgba(242,163,27,.25); }
+        .aiu-field input { width:100%; min-width:0; background:transparent; border:0; outline:0; font:inherit; font-weight:600; color:#0f172a; -moz-appearance:textfield; }
+        .aiu-field input::-webkit-outer-spin-button, .aiu-field input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+        @media (prefers-reduced-motion: reduce) { .fold, .chev, .seg button, .aiu-check, .aiu-field { transition:none; } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-2 sm:p-4 text-slate-800">
+
+    <!-- Barra superior (simulación) -->
+    <div class="w-full max-w-sm flex items-center justify-between text-white pt-2 pb-3 px-3">
+        <div>
+            <div class="font-bold text-base tracking-wide leading-tight">SACTEC</div>
+            <div class="text-[11px] text-slate-400">sactec.dev</div>
+        </div>
+        <button class="text-white opacity-80 hover:opacity-100 p-1" aria-label="Más opciones"><i class="fa-solid fa-ellipsis-vertical text-xl"></i></button>
+    </div>
+
+    <div class="w-full max-w-sm relative mt-2">
+
+        <!-- Selector de fecha de fondo (simulación) -->
+        <div class="bg-slate-200/40 rounded-2xl p-3 mb-[-25px] opacity-40 mx-3 flex justify-between items-center text-xs font-semibold text-slate-700">
+            <span>&lt;</span>
+            <span><i class="fa-regular fa-calendar mr-1"></i> Lun, 26 Oct</span>
+            <span>&gt;</span>
+        </div>
+
+        <!-- HOJA PRINCIPAL -->
+        <div class="sheet w-full bg-white p-6 relative z-10">
+
+            <!-- Encabezado -->
+            <div class="flex justify-between items-start mb-5">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">Editar venta</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Edición manual</p>
+                </div>
+                <button class="text-slate-400 hover:text-slate-600 p-1 -mr-1 -mt-1" aria-label="Cerrar" onclick="toast('Cerrado')"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <!-- Estado y método de pago -->
+            <div class="grid grid-cols-2 gap-2.5 mb-5">
+                <div class="seg" role="group" aria-label="Estado">
+                    <button type="button" aria-pressed="true" onclick="pick(this)">Pendiente</button>
+                    <button type="button" aria-pressed="false" onclick="pick(this)">Confirmado</button>
+                </div>
+                <div class="seg" role="group" aria-label="Método de pago">
+                    <button type="button" aria-pressed="true" onclick="pick(this)">Efectivo</button>
+                    <button type="button" aria-pressed="false" onclick="pick(this)">Transf.</button>
+                </div>
+            </div>
+
+            <!-- AIU -->
+            <div class="rounded-2xl bg-slate-50 mb-6">
+                <label class="flex items-center gap-3 p-4 cursor-pointer">
+                    <span class="flex-1 min-w-0">
+                        <span class="block text-sm font-bold text-slate-900 leading-tight">Aplicar AIU</span>
+                        <span class="block text-xs text-slate-500 mt-0.5">Base especial de IVA y retenciones según el tipo de contrato</span>
+                    </span>
+                    <input type="checkbox" id="toggle-aiu" class="aiu-check" aria-label="Aplicar AIU" onchange="toggleAIU()">
+                </label>
+                <div id="panel-aiu" class="fold" inert>
+                    <div>
+                        <div class="px-4 pb-4">
+                            <div class="seg mb-2" role="group" aria-label="Tipo de contrato AIU">
+                                <button type="button" aria-pressed="true" data-tipo="aseo" onclick="setTipo(this)">Aseo / vigilancia</button>
+                                <button type="button" aria-pressed="false" data-tipo="obra" onclick="setTipo(this)">Obra civil</button>
+                            </div>
+                            <p id="aiu-hint" class="text-xs text-slate-500 leading-relaxed mb-3"></p>
+                            <div id="aiu-unif">
+                                <label for="input-aiu" class="block text-xs text-slate-500 mb-1.5">AIU pactado (unificado)</label>
+                                <div class="aiu-field util"><input type="number" id="input-aiu" value="10" min="0" max="100" step="0.1" inputmode="decimal" oninput="calc()" onfocus="this.select()"><span>%</span></div>
+                                <div id="amt-aiu" class="text-[11px] font-semibold text-amber-800 mt-1.5 tnum">$239.900</div>
+                            </div>
+                            <div id="aiu-grid" class="hidden grid grid-cols-3 gap-2">
+                                <div>
+                                    <label for="input-admin" class="block text-xs text-slate-500 mb-1.5">Administración</label>
+                                    <div class="aiu-field"><input type="number" id="input-admin" value="10" min="0" max="100" step="0.1" inputmode="decimal" oninput="calc()" onfocus="this.select()"><span>%</span></div>
+                                    <div id="amt-admin" class="text-[11px] text-slate-500 mt-1.5 tnum">$239.900</div>
+                                </div>
+                                <div>
+                                    <label for="input-imprev" class="block text-xs text-slate-500 mb-1.5">Imprevistos</label>
+                                    <div class="aiu-field"><input type="number" id="input-imprev" value="2" min="0" max="100" step="0.1" inputmode="decimal" oninput="calc()" onfocus="this.select()"><span>%</span></div>
+                                    <div id="amt-imprev" class="text-[11px] text-slate-500 mt-1.5 tnum">$47.980</div>
+                                </div>
+                                <div>
+                                    <label for="input-util" class="block text-xs font-semibold text-amber-800 mb-1.5">Utilidad</label>
+                                    <div class="aiu-field util"><input type="number" id="input-util" value="5" min="0" max="100" step="0.1" inputmode="decimal" oninput="calc()" onfocus="this.select()"><span>%</span></div>
+                                    <div id="amt-util" class="text-[11px] font-semibold text-amber-800 mt-1.5 tnum">$119.950</div>
+                                </div>
+                            </div>
+                            <div class="flex items-baseline justify-between mt-3 text-sm">
+                                <span class="text-slate-500">AIU total</span>
+                                <span><span id="aiu-total-pct" class="font-bold text-emerald-700">17%</span><span id="aiu-total-monto" class="ml-2 text-slate-500 tnum">$407.830</span></span>
+                            </div>
+                            <div class="flex items-baseline justify-between mt-1.5 text-sm">
+                                <span class="text-slate-500">Base gravable IVA</span>
+                                <span id="aiu-base-iva" class="font-semibold text-slate-800 tnum">$407.830</span>
+                            </div>
+                            <p id="aiu-warn" class="hidden mt-2 text-xs font-medium text-amber-800 bg-amber-50 rounded-lg px-3 py-2">El AIU es menor al 10% del contrato. La base del IVA se ajusta al 10% (mínimo legal).</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Liquidación -->
+            <div class="text-sm">
+                <div class="flex justify-between items-center py-2">
+                    <span class="text-slate-500">Subtotal</span>
+                    <span id="lbl-subtotal" class="font-semibold text-slate-800 tnum">$2.399.000</span>
+                </div>
+                <div id="row-aiu" class="hidden flex justify-between items-center py-2">
+                    <span class="text-slate-500">AIU <span id="aiu-tag" class="ml-1 text-xs text-slate-400"></span></span>
+                    <span id="lbl-aiu" class="font-semibold text-slate-800 tnum">$0</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="text-slate-500">IVA <span id="iva-tag" class="ml-1 text-xs text-slate-400">19%</span></span>
+                    <span id="lbl-iva" class="font-semibold text-slate-800 tnum">$455.810</span>
+                </div>
+                <button type="button" aria-expanded="false" onclick="fold(this,'fold-ret')" class="link w-full flex justify-between items-center py-2 text-left rounded-lg">
+                    <span class="text-slate-500">Retenciones <i class="chev fa-solid fa-chevron-down text-[10px] ml-1 text-slate-400"></i></span>
+                    <span id="lbl-total-retenido" class="font-semibold text-slate-800 tnum">−$133.145</span>
+                </button>
+                <div id="fold-ret" class="fold" inert>
+                    <div>
+                        <div class="ml-0.5 pl-3 border-l-2 border-slate-100 my-1 py-1 space-y-1.5 text-[13px] text-slate-500">
+                            <div class="flex justify-between"><span>ReteFuente <span id="rf-rate">2.5%</span></span><span id="lbl-retefuente" class="tnum">$59.975</span></div>
+                            <div class="flex justify-between"><span>ReteICA 0.2%</span><span id="lbl-reteica" class="tnum">$4.798</span></div>
+                            <div class="flex justify-between"><span>ReteIVA 15%</span><span id="lbl-reteiva" class="tnum">$68.372</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-baseline justify-between border-t border-slate-100 mt-2 pt-4">
+                    <span class="font-semibold text-slate-700">Neto recibido</span>
+                    <span id="lbl-neto-recibido" class="text-[28px] font-extrabold tracking-tight tnum" style="color:#00a155">$2.721.666</span>
+                </div>
+            </div>
+
+            <!-- Reglas -->
+            <button type="button" aria-expanded="false" onclick="fold(this,'fold-rules')" class="link mt-5 text-xs font-medium text-slate-400 hover:text-slate-600 rounded">
+                Ver reglas aplicadas <i class="chev fa-solid fa-chevron-down text-[9px] ml-1"></i>
+            </button>
+            <div id="fold-rules" class="fold" inert>
+                <div>
+                    <ul class="pt-3 space-y-1.5 text-xs text-slate-500 leading-relaxed">
+                        <li><strong class="text-slate-600">IVA:</strong> 19% sobre el subtotal. Con AIU: aseo/vigilancia/temporales (art. 462-1 E.T.), 19% sobre el AIU, que no puede ser menor al 10% del contrato. En obra civil, 19% solo sobre la utilidad.</li>
+                        <li><strong class="text-slate-600">ReteFuente y ReteICA:</strong> sin AIU, sobre el subtotal. Con AIU en aseo/vigilancia, sobre el AIU (ReteFuente 2%, solo si el AIU es ≥ 4 UVT). En obra civil, sobre el valor del contrato + AIU (ReteFuente 2%).</li>
+                        <li><strong class="text-slate-600">ReteIVA:</strong> 15% del IVA generado.</li>
+                        <li><strong class="text-slate-600">Neto recibido:</strong> subtotal + AIU + IVA − retenciones.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra inferior -->
+        <div class="mt-4 mb-6">
+            <div class="bg-white rounded-full shadow-lg p-2 px-4 flex items-center justify-between border border-slate-100">
+                <button class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600" aria-label="Cancelar" onclick="toast('Acción cancelada')"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-xs font-medium text-slate-500">Total cobrado</span>
+                    <span id="lbl-bottom-total" class="text-xl font-black text-slate-900 tracking-tight tnum">$2.854.810</span>
+                </div>
+                <button class="w-10 h-10 bg-[#0c3558] hover:bg-[#0a2e4d] text-white rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform" aria-label="Guardar venta" onclick="toast('Venta guardada exitosamente')">
+                    <i class="fa-solid fa-paper-plane text-sm rotate-45 -translate-x-0.5 translate-y-0.5"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-full shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none z-50">Notificación</div>
+
+    <script>
+        const SUBTOTAL = 2399000;
+        const IVA = 0.19;
+        const AIU_MIN = 0.10;        // AIU mínimo: 10% del valor del contrato (art. 462-1 E.T.)
+        const RETE_MIN_AIU = 209000; // 4 UVT: base mínima para ReteFuente sobre AIU (tabla del video)
+        let TIPO = 'aseo';
+        const RULES = {
+            aseo: { iva: 0.19, baseLbl: 'AIU',      hint: 'Aseo, cafetería, vigilancia y temporales (art. 462-1): IVA 19% sobre el AIU, mínimo 10% del contrato. Retenciones sobre el AIU. El AIU va unificado, sin discriminar A, I y U.' },
+            obra: { iva: 0.19, baseLbl: 'utilidad', hint: 'Obra civil: el AIU se pacta libremente. El AIU se discrimina en Administración, Imprevistos y Utilidad: IVA 19% solo sobre la utilidad; retenciones sobre contrato + AIU.' }
+        };
+        const $ = id => document.getElementById(id);
+        const cop = n => '$' + Math.round(n).toLocaleString('es-CO');
+        const pct = id => (parseFloat($(id).value) || 0) / 100;
+
+        function pick(btn) {
+            btn.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b === btn));
+        }
+
+        function fold(btn, id) {
+            const open = btn.getAttribute('aria-expanded') !== 'true';
+            btn.setAttribute('aria-expanded', open);
+            $(id).classList.toggle('open', open);
+            $(id).inert = !open;
+        }
+
+        function toggleAIU() {
+            const on = $('toggle-aiu').checked;
+            $('panel-aiu').classList.toggle('open', on);
+            $('panel-aiu').inert = !on;
+            calc();
+            toast(on ? 'AIU activado' : 'AIU desactivado');
+        }
+
+        function setTipo(btn) {
+            TIPO = btn.dataset.tipo;
+            pick(btn);
+            calc();
+        }
+
+        function calc() {
+            const aiu = $('toggle-aiu').checked;
+            const r = RULES[TIPO];
+            let iva = SUBTOTAL * IVA, aiuMonto = 0;
+            let retBase = SUBTOTAL, rfRate = 0.025;
+
+            $('aiu-hint').textContent = r.hint;
+            $('row-aiu').classList.toggle('hidden', !aiu);
+
+            if (aiu) {
+                const unif = TIPO !== 'obra';   // aseo/vigilancia: AIU unificado; obra civil: discriminado
+                $('aiu-unif').classList.toggle('hidden', !unif);
+                $('aiu-grid').classList.toggle('hidden', unif);
+                let a, i, u;
+                if (unif) {
+                    a = pct('input-aiu'); i = 0; u = 0;
+                    $('amt-aiu').textContent = cop(SUBTOTAL * a);
+                } else {
+                    a = pct('input-admin'); i = pct('input-imprev'); u = pct('input-util');
+                    $('amt-admin').textContent = cop(SUBTOTAL * a);
+                    $('amt-imprev').textContent = cop(SUBTOTAL * i);
+                    $('amt-util').textContent = cop(SUBTOTAL * u);
+                }
+                const pactado = SUBTOTAL * (a + i + u);
+                $('aiu-total-pct').textContent = ((a + i + u) * 100).toFixed(1).replace(/\.0$/, '') + '%';
+                $('aiu-total-monto').textContent = cop(pactado);
+
+                let baseIVA;
+                if (TIPO === 'obra') {
+                    // Obra civil: AIU libre; IVA solo sobre utilidad; retenciones sobre contrato + AIU
+                    aiuMonto = pactado;
+                    baseIVA = SUBTOTAL * u;
+                    retBase = SUBTOTAL + aiuMonto;
+                    rfRate = 0.02;
+                    $('aiu-warn').classList.add('hidden');
+                } else {
+                    // Art. 462-1: AIU mínimo 10% del contrato; IVA y retenciones sobre el AIU
+                    aiuMonto = Math.max(pactado, SUBTOTAL * AIU_MIN);
+                    baseIVA = aiuMonto;
+                    retBase = aiuMonto;
+                    rfRate = (aiuMonto >= RETE_MIN_AIU) ? 0.02 : 0;
+                    $('aiu-warn').classList.toggle('hidden', pactado >= SUBTOTAL * AIU_MIN - 0.5);
+                }
+                $('aiu-base-iva').textContent = cop(baseIVA);
+                iva = baseIVA * r.iva;
+                $('aiu-tag').textContent = ((aiuMonto / SUBTOTAL) * 100).toFixed(1).replace(/\.0$/, '') + '%';
+                $('lbl-aiu').textContent = cop(aiuMonto);
+            }
+
+            const reteFuente = retBase * rfRate, reteICA = retBase * 0.002, reteIVA = iva * 0.15;
+            const retenido = reteFuente + reteICA + reteIVA;
+            const total = SUBTOTAL + aiuMonto + iva;
+
+            $('iva-tag').textContent = aiu ? (r.iva * 100) + '% sobre ' + r.baseLbl : '19%';
+            $('iva-tag').className = 'ml-1 text-xs ' + (aiu ? 'font-semibold text-amber-700' : 'text-slate-400');
+            $('rf-rate').textContent = (rfRate * 100).toFixed(1).replace(/\.0$/, '') + '%';
+            $('lbl-subtotal').textContent = cop(SUBTOTAL);
+            $('lbl-iva').textContent = cop(iva);
+            $('lbl-retefuente').textContent = cop(reteFuente);
+            $('lbl-reteica').textContent = cop(reteICA);
+            $('lbl-reteiva').textContent = cop(reteIVA);
+            $('lbl-total-retenido').textContent = '−' + cop(retenido);
+            $('lbl-neto-recibido').textContent = cop(total - retenido);
+            $('lbl-bottom-total').textContent = cop(total);
+        }
+
+        let toastTimer;
+        function toast(msg) {
+            const t = $('toast');
+            t.textContent = msg;
+            t.classList.remove('opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.add('opacity-0'), 2500);
+        }
+    </script>
+</body>
+</html>

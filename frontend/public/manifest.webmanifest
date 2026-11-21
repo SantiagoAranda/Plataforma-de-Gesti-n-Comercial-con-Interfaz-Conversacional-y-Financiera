@@ -1,6 +1,8 @@
 {
-  "name": "Plataforma de Gestión Comercial",
-  "short_name": "Gestión Comercial",
+  "name": "SACTEC",
+  "short_name": "SACTEC",
+  "description": "SACTEC es una plataforma de gestión comercial que te permite administrar productos, servicios, ventas, reservas y movimientos de tu negocio de manera simple, rápida y organizada.",
+  "lang": "es",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#121A28",
@@ -9,12 +11,20 @@
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

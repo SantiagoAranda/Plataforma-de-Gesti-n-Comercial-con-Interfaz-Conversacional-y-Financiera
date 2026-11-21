@@ -144,7 +144,7 @@ function AgendaEventRow({ event }: { event: AgendaEvent }) {
               statusBadgeStyle(event.status),
             )}
           >
-            {event.status}
+            {event.status === "COMPLETADO" ? "FINALIZADA" : event.status}
           </span>
         </div>
       </div>

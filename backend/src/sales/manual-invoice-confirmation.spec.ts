@@ -9,6 +9,8 @@ describe('ordinary sale closure with electronic invoicing available', () => {
       items: [{ id: 'line-1', itemId: 'product-1', quantity: 1, unitPrice: 100, itemTypeSnapshot: 'PRODUCT' }],
     };
     const tx: any = {
+      reservation: { findFirst: jest.fn().mockResolvedValue(null) },
+      accountingMovement: { findMany: jest.fn().mockResolvedValue([]) },
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -16,6 +18,7 @@ describe('ordinary sale closure with electronic invoicing available', () => {
       },
       businessTaxProfile: { findUnique: jest.fn().mockResolvedValue({ taxSettingsEnabled: true }) },
     };
+    tx.$queryRaw ??= jest.fn().mockResolvedValue([]);
     const prisma: any = { $transaction: jest.fn((callback: any) => callback(tx)), fiscalDocument: { findFirst: jest.fn() } };
     const tax: any = {
       calculateTaxPreview: jest.fn().mockImplementation(async (_businessId: string, input: any) => {
@@ -42,10 +45,13 @@ describe('ordinary sale closure with electronic invoicing available', () => {
     const order: any = { id: 'sale-1', businessId: 'business-1', origin: 'MANUAL', status: 'DRAFT',
       accountingPostedAt: null, inventoryPostedAt: null, taxSnapshot: null,
       items: [{ id: 'line-1', itemId: 'product-1', quantity: 1, unitPrice: 100, itemTypeSnapshot: 'PRODUCT' }] };
-    const tx: any = { order: { findFirst: jest.fn().mockResolvedValue(order),
+    const tx: any = {
+      reservation: { findFirst: jest.fn().mockResolvedValue(null) },
+      accountingMovement: { findMany: jest.fn().mockResolvedValue([]) }, order: { findFirst: jest.fn().mockResolvedValue(order),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...order, status: 'COMPLETED' }) },
       businessTaxProfile: { findUnique: jest.fn().mockResolvedValue({ taxSettingsEnabled: false }) } };
+    tx.$queryRaw ??= jest.fn().mockResolvedValue([]);
     const prisma: any = { $transaction: jest.fn((callback: any) => callback(tx)) };
     const tax: any = { calculateTaxPreview: jest.fn(), freezeTaxCalculation: jest.fn() };
     const fiscal: any = { captureInvoiceCloseSnapshot: jest.fn(), createInvoiceIntent: jest.fn(), dispatch: jest.fn() };
@@ -62,10 +68,13 @@ describe('ordinary sale closure with electronic invoicing available', () => {
     const draft: any = { id: 'sale-1', businessId: 'business-1', status: 'DRAFT',
       accountingPostedAt: null, inventoryPostedAt: null, items: [{ id: 'line-1' }] };
     const tx: any = {
+      reservation: { findFirst: jest.fn().mockResolvedValue(null) },
+      accountingMovement: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn().mockResolvedValue([{ id: draft.id }]),
       order: { findFirst: jest.fn().mockResolvedValue({ ...draft, status: 'COMPLETED', accountingPostedAt: new Date() }), update: jest.fn() },
       orderItem: { delete: jest.fn() },
     };
+    tx.$queryRaw ??= jest.fn().mockResolvedValue([]);
     const prisma: any = { order: { findFirst: jest.fn().mockResolvedValue(draft) },
       orderItem: { findFirst: jest.fn().mockResolvedValue({ id: 'line-1', orderId: draft.id, businessId: draft.businessId }) },
       $transaction: jest.fn((callback: any) => callback(tx)) };
@@ -78,15 +87,18 @@ describe('ordinary sale closure with electronic invoicing available', () => {
 
   it('blocks reversing an order whose electronic invoice is still pending', async () => {
     const tx: any = {
+      reservation: { findFirst: jest.fn().mockResolvedValue(null) },
+      accountingMovement: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'sale-1' }]),
-      order: { findFirst: jest.fn().mockResolvedValue({ id: 'sale-1', businessId: 'business-1', status: 'COMPLETED', items: [] }), update: jest.fn() },
-      fiscalDocument: { findFirst: jest.fn().mockResolvedValue({ id: 'invoice-1', status: 'PENDING' }) },
-      inventoryMovement: { findMany: jest.fn() },
+      order: { findFirst: jest.fn().mockResolvedValue({ id: 'sale-1', businessId: 'business-1', status: 'COMPLETED', inventoryPostedAt: new Date(), items: [] }), update: jest.fn() },
+      fiscalDocument: { findMany: jest.fn().mockResolvedValue([{ id: 'invoice-1', orderId: 'sale-1', type: 'INVOICE', status: 'PENDING' }]), findFirst: jest.fn().mockResolvedValue({ id: 'invoice-1', status: 'PENDING' }) },
+      inventoryMovement: { findMany: jest.fn().mockResolvedValue([]) },
     };
+    tx.$queryRaw ??= jest.fn().mockResolvedValue([]);
     const prisma: any = { $transaction: jest.fn((callback: any) => callback(tx)) };
     const service = new SalesService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
-    await expect(service.reverseConfirmedOrder('business-1', 'sale-1', {} as any)).rejects.toThrow('sincronizacion');
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    await expect(service.reverseConfirmedOrder('business-1', 'sale-1', {} as any)).rejects.toMatchObject({ response: expect.objectContaining({ code: 'FISCAL_SYNCHRONIZATION_REQUIRED' }) });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 });

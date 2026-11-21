@@ -13,6 +13,7 @@ describe('Sales Price History & Audit Suite', () => {
 
   function mockPrisma(overrides: Record<string, any> = {}) {
     const p: any = {
+      $queryRaw: fn().mockResolvedValue([]),
       item: {
         findMany: fn((args: any) => {
           const ids = args?.where?.id?.in;
@@ -93,6 +94,7 @@ describe('Sales Price History & Audit Suite', () => {
         create: fn((args: any) => Promise.resolve({ id: 'oi-1', ...args.data })),
       },
       reservation: {
+        findFirst: fn().mockResolvedValue(null),
         findMany: fn().mockResolvedValue([]),
         create: fn(),
         updateMany: fn().mockResolvedValue({ count: 0 }),

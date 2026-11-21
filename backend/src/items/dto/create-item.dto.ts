@@ -14,6 +14,7 @@ import {
 
 import { Transform, Type } from 'class-transformer';
 import { InventoryMode, ItemType, Weekday, SaleConcept } from '@prisma/client';
+import { ItemCatalogFieldsDto } from './item-catalog-fields.dto';
 
 class BadgeInput {
   @IsString()
@@ -37,7 +38,7 @@ export class ScheduleInput {
   endMinute!: number;
 }
 
-export class CreateItemDto {
+export class CreateItemDto extends ItemCatalogFieldsDto {
   @IsOptional()
   @IsUUID()
   id?: string;

@@ -1,12 +1,28 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import { ReservationsService } from './reservations.service';
+import {
+  BUSINESS_ID,
+  createFakePrisma,
+  freezeBogotaTime,
+  ITEM_ID,
+} from '../availability/availability.test-utils';
 
 describe('ReservationsService', () => {
+  beforeEach(() => freezeBogotaTime('2026-08-20T08:00:00'));
+  afterEach(() => jest.useRealTimers());
+
   it('rejects availability and new reservations for an inactive service', async () => {
     const prisma = {
       item: {
         findFirst: jest
-          .fn()
+          .fn<any>()
           .mockResolvedValueOnce(null)
           .mockResolvedValueOnce({ id: 'service-1' }),
       },
@@ -19,20 +35,16 @@ describe('ReservationsService', () => {
   });
 
   it('rejects a new reservation for an inactive service', async () => {
-    const prisma = {
-      item: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({ id: 'service-1' }),
-      },
-      reservation: { findFirst: jest.fn(), create: jest.fn() },
-    };
-    const service = new ReservationsService(prisma as any);
+    const prisma = createFakePrisma({
+      durationMinutes: 60,
+      itemStatus: 'INACTIVE',
+      windows: [],
+    });
+    const service = new ReservationsService(prisma);
 
     await expect(
-      service.create('business-1', {
-        itemId: 'service-1',
+      service.create(BUSINESS_ID, {
+        itemId: ITEM_ID,
         date: '2026-08-27',
         startMinute: 600,
         endMinute: 660,
@@ -41,34 +53,39 @@ describe('ReservationsService', () => {
     expect(prisma.reservation.create).not.toHaveBeenCalled();
   });
 
-  it('reschedules an existing reservation using its persisted itemId without resolving a new service', async () => {
-    const prisma = {
-      reservation: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValueOnce({
-            id: 'reservation-1',
-            itemId: 'inactive-service-1',
-            status: 'PENDING',
-          })
-          .mockResolvedValueOnce(null),
-        update: jest.fn().mockResolvedValue({ id: 'reservation-1' }),
-      },
-      item: { findFirst: jest.fn() },
-    };
-    const service = new ReservationsService(prisma as any);
+  it('reschedules an existing reservation of an inactive service using its persisted itemId', async () => {
+    const prisma = createFakePrisma({
+      durationMinutes: 60,
+      itemStatus: 'INACTIVE',
+      // 2026-08-28 is a Friday.
+      windows: [
+        { itemId: ITEM_ID, weekday: 'FRI', startMinute: 540, endMinute: 780 },
+      ],
+      reservations: [
+        {
+          id: 'reservation-1',
+          date: '2026-08-27',
+          startMinute: 600,
+          endMinute: 660,
+          status: 'PENDING',
+        },
+      ],
+    });
+    const service = new ReservationsService(prisma);
 
-    await service.reschedule('business-1', 'reservation-1', {
+    await service.reschedule(BUSINESS_ID, 'reservation-1', {
       date: '2026-08-28',
       startMinute: 600,
       endMinute: 660,
     });
 
-    expect(prisma.reservation.findFirst).toHaveBeenLastCalledWith(
+    expect(prisma.item.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ itemId: 'inactive-service-1' }),
+        where: { id: ITEM_ID, businessId: BUSINESS_ID },
       }),
     );
-    expect(prisma.item.findFirst).not.toHaveBeenCalled();
+    expect(prisma.reservations[0]).toEqual(
+      expect.objectContaining({ itemId: ITEM_ID, startMinute: 600 }),
+    );
   });
 });

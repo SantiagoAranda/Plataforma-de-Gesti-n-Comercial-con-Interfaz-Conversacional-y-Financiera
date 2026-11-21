@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -25,13 +25,23 @@ import SalesChatComposer, {
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 const SaleReceiptModal = dynamic(() => import("@/src/components/sales/SaleReceiptModal"), { ssr: false });
+const SaleDocumentModal = dynamic(() => import("@/src/components/sales/SaleDocumentModal"), { ssr: false });
+const QuotationDocumentModal = dynamic(() => import("@/src/components/sales/QuotationDocumentModal"), { ssr: false });
 import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
 import ElectronicInvoiceConfirmModal from "@/src/components/sales/ElectronicInvoiceConfirmModal";
 import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirmation, firstInvoiceConfirmationStep } from "@/src/lib/sales/manualInvoiceUi";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import QuotationList from "@/src/components/sales/QuotationList";
+import { listQuotations, transitionQuotation } from "@/src/services/quotations";
+import { quotationView, quotationWhatsAppUrl } from "@/src/lib/quotations/quotationPresentation";
+import type { Quotation, QuotationAction } from "@/src/types/quotations";
+import { completeReservation, markReservationNoShow, confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { canCancelReservation, reservationCancelPrompt, reservationLink } from "@/src/lib/sales/reservationCancelUi";
+import { saveManualService, type ManualServiceAttempt } from "@/src/lib/sales/retrospectiveSale";
+import { isNoShow } from "@/src/lib/sales/salePresentation";
+import { saleDayKey, type SaleDateBasis } from "@/src/lib/sales/saleDates";
 import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
 import type { FactusConfigurationView, FiscalDocument } from "@/src/types/fiscal-documents";
 import { getCached, invalidateCache } from "@/src/lib/cache";
@@ -163,12 +173,22 @@ function mapOrderToSale(order: ApiOrder): Sale {
     paymentMethod: order.paymentMethod,
     type: order.type,
     status: order.status as Sale["status"],
+    allowedActions: order.allowedActions,
+    blockedActions: order.blockedActions,
+    reservationStatus: order.reservationStatus,
+    confirmedAt: order.confirmedAt,
+    completedAt: order.completedAt,
+    cancelledAt: order.cancelledAt,
+    cancelReason: order.cancelReason ?? null,
+    commercialPolicyVersion: order.commercialPolicyVersion ?? null,
+    countsAsSale: order.countsAsSale,
     inventoryPostedAt: order.inventoryPostedAt ?? null,
     accountingPostedAt: order.accountingPostedAt ?? null,
     requiresLegacyInvoiceWarning: order.requiresLegacyInvoiceWarning ?? true,
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
+    reservationPublicToken: order.reservationPublicToken ?? null,
     fiscalSummary: order.fiscalSummary ?? null,
     fiscalContext,
     taxLines: order.taxLines ?? null,
@@ -177,8 +197,14 @@ function mapOrderToSale(order: ApiOrder): Sale {
   };
 }
 
+// The backend decides what is a realized sale; a policy 2 CONFIRMED booking is not one.
+// Older payloads without the flag keep the historical status rule.
+function isRealizedSale(sale: Sale) {
+  return sale.countsAsSale ?? ["CERRADO", "CONFIRMADO", "FINALIZADA"].includes(sale.status);
+}
+
 function isDeletionBlockedByPostedInventory(sale: Sale) {
-  return sale.status === "CERRADO" && sale.inventoryPostedAt != null;
+  return !sale.allowedActions?.includes("delete");
 }
 
 const SALE_SAVE_ERROR_FALLBACK =
@@ -296,6 +322,7 @@ function VentaPageContent() {
   const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
   const [viewMode, setViewMode] = useState<"MONTH" | "DAILY">("DAILY");
+  const [dateBasis, setDateBasis] = useState<SaleDateBasis>("REGISTRO");
 
   // today como referencia estable (sin useMemo para evitar desajustes)
   const todayRef = useRef(new Date());
@@ -307,6 +334,9 @@ function VentaPageContent() {
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [documentView, setDocumentView] = useState<{ sale: Sale; kind: "quotation" | "delivery" } | null>(null);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotationDoc, setQuotationDoc] = useState<Quotation | null>(null);
   const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
   const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
   const [fiscalDocumentsStatus, setFiscalDocumentsStatus] = useState<"loading" | "loaded" | "error">("loading");
@@ -361,30 +391,39 @@ function VentaPageContent() {
     });
   }, []);
 
+  const manualServiceAttempt = useRef<ManualServiceAttempt>(null);
+  const createInFlight = useRef(false);
+
   const showConfirmation = (
     title: string,
     actionLabel: string,
     onAction: () => void,
-    variant: 'emerald' | 'rose' = 'emerald'
+    variant: 'emerald' | 'rose' = 'emerald',
+    dismissLabel = 'Cancelar',
+    message?: string,
+    onDismiss?: () => void,
   ) => {
     toast.custom((t) => (
       <div className={`${t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-2'} max-w-xs w-full bg-white shadow-2xl rounded-2xl border border-neutral-100 p-4 pointer-events-auto`}>
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${variant === 'rose' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
-            <AlertTriangle size={16} />
+            {message ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           </div>
-          <div className="flex-1">
-            <p className="text-[13px] font-medium text-neutral-800 leading-tight mb-3">{title}</p>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[13px] font-medium text-neutral-800 leading-tight ${message ? 'mb-1 font-semibold' : 'mb-3'}`}>{title}</p>
+            {message && <p className="text-[12px] text-neutral-600 leading-snug mb-3">{message}</p>}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => toast.dismiss(t.id)}
+                // remove, not dismiss: dismiss queues a 1 s removal by id that also killed a
+                // confirmation reopened within that second (same id) — the dialog never showed.
+                onClick={() => { toast.remove(t.id); onDismiss?.(); }}
                 className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-medium uppercase tracking-wider hover:bg-neutral-100 transition"
               >
-                Cancelar
+                {dismissLabel}
               </button>
               <button
                 onClick={() => {
-                  toast.dismiss(t.id);
+                  toast.remove(t.id);
                   onAction();
                 }}
                 className={`flex-1 h-9 rounded-xl text-white text-[11px] font-medium uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
@@ -395,7 +434,7 @@ function VentaPageContent() {
           </div>
         </div>
       </div>
-    ), { id: 'sale-action-confirm', position: 'top-center' });
+    ), { id: 'sale-action-confirm', position: 'top-center', duration: Infinity });
   };
 
   const loadOrders = useCallback(async () => {
@@ -403,7 +442,8 @@ function VentaPageContent() {
       setLoading(true);
       setError(null);
 
-      const data = await listSales({ includeCancelled: includeCancelledSales });
+      // The backend omits cancelled sales unless asked; the "Canceladas" filter needs them.
+      const data = await listSales({ includeCancelled: includeCancelledSales || filterStatus === "CANCELLED" || filterStatus === "NO_SHOW" });
       setSales(data.map(mapOrderToSale));
     } catch (err) {
       console.error(err);
@@ -411,7 +451,7 @@ function VentaPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [includeCancelledSales]);
+  }, [includeCancelledSales, filterStatus]);
 
   useEffect(() => {
     loadOrders();
@@ -517,6 +557,7 @@ function VentaPageContent() {
         setFilterYear(createdAt.getFullYear());
         setFilterMonth(createdAt.getMonth() + 1);
         setViewMode("DAILY");
+        setDateBasis("REGISTRO");
         setPendingDeepLinkSaleId(sale.id);
       })
       .catch(() => {
@@ -538,30 +579,24 @@ function VentaPageContent() {
 
   // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
   const salesForPeriod = useMemo(() => {
+    // Día de negocio (Bogotá) de la fecha de registro o del turno, según la vista elegida.
     if (viewMode === "MONTH") {
-      // Filtro client-side por año/mes de createdAt
-      return sales.filter((sale) => {
-        try {
-          const d = new Date(sale.createdAt);
-          return d.getFullYear() === filterYear && d.getMonth() + 1 === filterMonth;
-        } catch {
-          return false;
-        }
-      });
+      const monthPrefix = `${filterYear}-${String(filterMonth).padStart(2, "0")}-`;
+      return sales.filter((sale) => saleDayKey(sale, dateBasis)?.startsWith(monthPrefix));
     }
-    // Modo DAILY: filtro por día de negocio (comportamiento original)
     const selectedKey = getCalendarBusinessDayKey(selectedDate);
-    return sales.filter((sale) => {
-      try {
-        return getBusinessDayKey(sale.createdAt) === selectedKey;
-      } catch {
-        return false;
-      }
-    });
-  }, [sales, viewMode, filterYear, filterMonth, selectedDate]);
+    return sales.filter((sale) => saleDayKey(sale, dateBasis) === selectedKey);
+  }, [sales, viewMode, filterYear, filterMonth, selectedDate, dateBasis]);
 
   // Alias para compatibilidad con el DayPickerCalendar (marcado de fechas)
   const salesForSelectedDate = salesForPeriod;
+
+  const filterCounts = useMemo(() => ({
+    pending: salesForSelectedDate.filter((s) => s.status === "PENDIENTE" || s.status === "PENDIENTE DE CIERRE").length,
+    closed: salesForSelectedDate.filter(isRealizedSale).length,
+    cancelled: salesForSelectedDate.filter((s) => s.status === "CANCELADO" && !isNoShow(s)).length,
+    quotations: quotations.filter((q) => quotationView(q) === "OPEN").length,
+  }), [salesForSelectedDate, quotations]);
 
   const filtered = useMemo(() => {
     let result = salesForSelectedDate;
@@ -571,12 +606,13 @@ function VentaPageContent() {
         if (filterStatus === "PENDING") {
           return s.status === "PENDIENTE" || s.status === "PENDIENTE DE CIERRE";
         }
-        if (filterStatus === "CLOSED") {
-          return s.status === "CERRADO";
-        }
+        if (filterStatus === "CLOSED") return isRealizedSale(s);
+        if (filterStatus === "CONFIRMED") return s.reservationStatus === "CONFIRMED";
+        if (filterStatus === "COMPLETED") return s.reservationStatus === "COMPLETED";
         if (filterStatus === "CANCELLED") {
-          return s.status === "CANCELADO";
+          return s.status === "CANCELADO" && !isNoShow(s);
         }
+        if (filterStatus === "NO_SHOW") return isNoShow(s);
         return true;
       });
     }
@@ -693,21 +729,23 @@ function VentaPageContent() {
   const todayMetrics = useMemo(() => {
     return {
       total: salesForSelectedDate
-        .filter((sale) => sale.status === "CERRADO")
+        .filter(isRealizedSale)
         .reduce((acc, sale) => acc + (sale.total ?? 0), 0),
-      transactions: salesForSelectedDate.length,
+      // A policy 2 booking (confirmed, cancelled or no-show) is not a transaction until completed.
+      transactions: salesForSelectedDate.filter(
+        (sale) => sale.commercialPolicyVersion !== 2 || isRealizedSale(sale)
+      ).length,
     };
   }, [salesForSelectedDate]);
 
   const saleDateKeys = useMemo(() => {
     const keys = new Set<string>();
     sales.forEach((sale) => {
-      try {
-        keys.add(getBusinessDayKey(sale.createdAt));
-      } catch { }
+      const key = saleDayKey(sale, dateBasis);
+      if (key) keys.add(key);
     });
     return keys;
-  }, [sales]);
+  }, [sales, dateBasis]);
 
   // ── hasDateFilter: visible en modo DAILY con día != hoy, o en modo MONTH ───────
   const hasDateFilter = viewMode === "MONTH" || !isSameCalendarDay(selectedDate, today);
@@ -750,6 +788,55 @@ function VentaPageContent() {
 
   const businessName = typeof window !== "undefined" ? localStorage.getItem("businessName") || "Mi Negocio" : "Mi Negocio";
 
+  // Las cotizaciones no cuentan como ventas: viven aparte y se muestran con el chip «Cotizaciones».
+  const refreshQuotations = useCallback(async () => {
+    try {
+      const rows = await listQuotations();
+      setQuotations(Array.isArray(rows) ? rows : []);
+    } catch {
+      toast.error("No se pudieron cargar las cotizaciones");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshQuotations();
+  }, [refreshQuotations]);
+
+  const applyQuotation = (updated: Quotation) =>
+    setQuotations((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+
+  const handleQuotationAction = async (quotation: Quotation, action: Exclude<QuotationAction, "send">) => {
+    const prompt: Record<string, string> = {
+      reject: "¿Marcar la cotización como rechazada? Ya no podrá aceptarse.",
+      cancel: "¿Cancelar la cotización? Esta acción no se puede deshacer.",
+    };
+    if (prompt[action] && !window.confirm(prompt[action])) return;
+    try {
+      applyQuotation(await transitionQuotation(quotation.id, action));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo actualizar la cotización");
+      void refreshQuotations();
+    }
+  };
+
+  const handleSendQuotation = async (quotation: Quotation) => {
+    const url = quotationWhatsAppUrl(
+      quotation,
+      receiptBusiness?.name,
+      `${window.location.origin}/cotizacion/${quotation.publicToken}`,
+    );
+    if (!url) {
+      toast.error("El cliente no dejó número de WhatsApp");
+      return;
+    }
+    window.open(url, "_blank");
+    try {
+      applyQuotation(await transitionQuotation(quotation.id, "send"));
+    } catch {
+      void refreshQuotations();
+    }
+  };
+
   const handleSendWhatsApp = (sale: Sale) => {
     if (!sale.customerWhatsapp) {
       alert("El cliente no tiene número de WhatsApp");
@@ -766,7 +853,7 @@ function VentaPageContent() {
 
     const reservaLink =
       sale.type === "SERVICIO" && sale.id
-        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${window.location.origin}/reserva/${sale.id}`
+        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${reservationLink(window.location.origin, sale.id, sale.reservationPublicToken)}`
         : "";
 
     const msg = baseMsg + reservaLink;
@@ -817,6 +904,7 @@ function VentaPageContent() {
         duration: 2000,
       });
     } catch (err) {
+      if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
       console.error(err);
       const message = getErrorMessage(err, "No se pudo finalizar la venta");
       setError(message);
@@ -883,31 +971,45 @@ function VentaPageContent() {
     buyerFiscalContext?: BuyerFiscalContext;
     items: { itemId: string; quantity: number }[];
   }) => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
     try {
       const payload = {
         ...data,
         origin: "MANUAL" as const,
       };
-      console.log("Payload create sale:", payload);
-      const created = await createSale(payload);
+      const created = data.type === "SERVICIO" && data.scheduledAt
+        ? await saveManualService(manualServiceAttempt, payload, createSale, () => new Promise<boolean>(resolve => {
+            showConfirmation(
+              "¿Confirmás que el servicio se prestó?", "SÍ, FINALIZAR", () => resolve(true), "emerald", "VOLVER",
+              "Se registrarán los movimientos de inventario y contabilidad correspondientes", () => resolve(false),
+            );
+          }))
+        : await createSale(payload);
+      if (!created) return;
 
-      if (data.status === "CERRADO") {
+      // Policy 2 effects are posted only by explicit completion, including the atomic retrospective path.
+      const isBooking = (created as { commercialPolicyVersion?: number | null }).commercialPolicyVersion === 2;
+      if (data.status === "CERRADO" && !isBooking) {
         await confirmSale(created.id, created.sourceType, data.buyerFiscalContext);
       }
 
-      toast.success("Venta registrada manualmente");
+      toast.success(created.reservationStatus === "COMPLETED" ? "Atención pasada registrada y finalizada" : isBooking ? "Turno reservado. Registrá la venta con «Finalizar atención» cuando se preste el servicio." : "Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
+      manualServiceAttempt.current = null;
+      setIsCreateOpen(false);
       await Promise.all([
         loadOrders(),
         refreshFiscalDocuments().catch(() => []),
-      ]);
-      setIsCreateOpen(false);
+      ]).catch(() => toast.error("La venta se registró. Actualizá la lista para verla."));
       setPendingSmoothScroll(true);
     } catch (error: unknown) {
       console.error("Error creating sale:", error);
       toast.error(getSaleSaveErrorMessage(error));
       throw error;
+    } finally {
+      createInFlight.current = false;
     }
   };
 
@@ -955,6 +1057,7 @@ function VentaPageContent() {
             toast.dismiss(successId);
           }, 2100);
         } catch (err) {
+          if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
           console.error(err);
 
           toast.dismiss(loadingId);
@@ -982,6 +1085,127 @@ function VentaPageContent() {
       "rose"
     );
   }, [detailsSale, loadOrders]);
+
+  // Rescheduling is done from this same edit flow; backend grants edit and reschedule together.
+  const handleOpenEdit = (sale: Sale) => {
+    if (salesBlockedBySimpleRegime || !sale.allowedActions?.includes('edit')) return;
+    setEditingSale(sale);
+    setDetailsSale(null);
+    setSelectedSale(null);
+  };
+  const handleOpenCompletion = (sale: Sale) => {
+    // No new confirmation while any sale action is in flight.
+    if (confirmingSaleId || !sale.allowedActions?.includes('complete')) return;
+    showConfirmation(
+      'Finalizar atención',
+      'Sí, finalizar',
+      // Clicking this button is the explicit "service provided" declaration (serviceProvided: true).
+      async () => {
+        const loadingId = 'reservation-complete-loading';
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading('Finalizando atención...', { id: loadingId });
+          await completeReservation(sale.id);
+          invalidateCache('home:sales');
+          invalidateCache('home:businessActivity');
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success('Atención finalizada');
+        } catch (error) {
+          // Never retried: refresh capabilities; a new attempt needs a new confirmation.
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.error(getErrorMessage(error, 'No se pudo finalizar la atención.'));
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      'emerald',
+      'Volver',
+      '¿Confirmás que el servicio se prestó? Se registrarán los movimientos de inventario y contabilidad correspondientes.'
+    );
+  };
+
+  const handleCancelReservation = useCallback((sale: Sale) => {
+    if (!sale.allowedActions?.includes("cancel")) return;
+    showConfirmation(
+      `¿Cancelar esta reserva? ${reservationCancelPrompt(sale)}`,
+      "Sí, cancelar reserva",
+      async () => {
+        const loadingId = "reservation-cancel-loading";
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading("Cancelando reserva...", { id: loadingId });
+          // ORDER cancels itself and its mirror in one transaction; the mirror id alone gets 409.
+          await cancelSale(sale.id, sale.sourceType);
+          invalidateCache("home:sales");
+          invalidateCache("home:businessActivity");
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success("Reserva cancelada. El horario quedó libre.", { duration: 2500 });
+        } catch (err) {
+          if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
+          console.error(err);
+          toast.dismiss(loadingId);
+          // 4xx carry the backend's Spanish reason; 5xx/network errors are not user-readable.
+          const fallback = "No se pudo cancelar la reserva. Intentá nuevamente.";
+          toast.error(
+            err instanceof AppApiError && err.status < 500 ? getErrorMessage(err, fallback) : fallback,
+            { duration: 5000 }
+          );
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "rose",
+      // "Cancelar" next to "Cancelar reserva" read as the confirm button and silently dismissed.
+      "Volver"
+    );
+  }, [loadOrders]);
+
+  const handleNoShow = useCallback((sale: Sale) => {
+    if (!sale.allowedActions?.includes("noShow")) return;
+    showConfirmation(
+      "¿Registrar que el cliente no asistió? La reserva quedará como «No asistió», sin venta ni movimientos de inventario.",
+      "Sí, no asistió",
+      async () => {
+        const loadingId = "reservation-no-show-loading";
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading("Registrando ausencia...", { id: loadingId });
+          await markReservationNoShow(sale.id);
+          invalidateCache("home:sales");
+          invalidateCache("home:businessActivity");
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success("Ausencia registrada. El horario quedó libre.", { duration: 2500 });
+        } catch (err) {
+          // Never retried automatically: refresh capabilities and let the user decide again.
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          const fallback = "No se pudo registrar la ausencia. Intentá nuevamente.";
+          toast.error(
+            err instanceof AppApiError && err.status < 500 ? getErrorMessage(err, fallback) : fallback,
+            { duration: 5000 }
+          );
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "rose",
+      "Volver"
+    );
+  }, [loadOrders]);
 
   const handleSaveEditedSale = async (updated: Sale) => {
     const loadingId = "sale-edit-loading";
@@ -1035,6 +1259,7 @@ function VentaPageContent() {
         toast.dismiss(successId);
       }, 2100);
     } catch (err) {
+      if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
       console.error(err);
       const message = getSaleSaveErrorMessage(err);
       setError(message);
@@ -1215,7 +1440,7 @@ function VentaPageContent() {
             viewLabel="Ver detalles"
             onEdit={
               !salesBlockedBySimpleRegime &&
-                (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+                selectedSale.allowedActions?.includes("edit")
                 ? () => {
                   setEditingSale(selectedSale);
                   setSelectedSale(null);
@@ -1224,7 +1449,10 @@ function VentaPageContent() {
             }
             editLabel="Editar"
             onDelete={
-              salesBlockedBySimpleRegime || isDeletionBlockedByPostedInventory(selectedSale)
+              salesBlockedBySimpleRegime ||
+              isDeletionBlockedByPostedInventory(selectedSale) ||
+              // Active reservations are cancelled from the detail ("Cancelar reserva"), not deleted.
+              canCancelReservation(selectedSale)
                 ? undefined
                 : () => handleDeleteSale(selectedSale)
             }
@@ -1314,6 +1542,22 @@ function VentaPageContent() {
               </div>
 
               <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <div role="group" aria-label="Fecha usada en el calendario" className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-slate-100 p-1">
+                  {([
+                    ["REGISTRO", "Fecha de registro"],
+                    ["TURNO", "Fecha del turno"],
+                  ] as const).map(([basis, label]) => (
+                    <button
+                      key={basis}
+                      type="button"
+                      aria-pressed={dateBasis === basis}
+                      onClick={() => setDateBasis(basis)}
+                      className={`h-8 rounded-full text-[11px] font-semibold uppercase tracking-wider transition-colors ${dateBasis === basis ? "bg-white text-[#0B3F64] shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <DayPickerCalendar
                   selectedDate={selectedDate}
                   onSelectDate={handleDaySelect}
@@ -1341,7 +1585,26 @@ function VentaPageContent() {
             </section>
           )}
 
-          {!loading && !error && filtered.length === 0 && (
+          {!loading && !error && filterStatus === "QUOTATIONS" && (
+            quotations.length === 0 ? (
+              <div className="mx-auto w-full max-w-md px-3 py-4 sm:max-w-3xl sm:px-4">
+                <EmptyStateCard
+                  icon={ShoppingBag}
+                  title="Aún no hay cotizaciones"
+                  description="Aquí aparecerán las cotizaciones que tus clientes soliciten desde la tienda."
+                />
+              </div>
+            ) : (
+              <QuotationList
+                quotations={quotations}
+                onView={setQuotationDoc}
+                onSend={handleSendQuotation}
+                onAction={handleQuotationAction}
+              />
+            )
+          )}
+
+          {!loading && !error && filterStatus !== "QUOTATIONS" && filtered.length === 0 && (
             <div className="mx-auto w-full max-w-md px-3 py-4 sm:max-w-3xl sm:px-4">
               <EmptyStateCard
                 icon={ShoppingBag}
@@ -1358,9 +1621,14 @@ function VentaPageContent() {
             </div>
           )}
 
-          {!loading && !error && filtered.length > 0 && (
+          {!loading && !error && filterStatus !== "QUOTATIONS" && filtered.length > 0 && (
             <SalesList
               sales={filtered}
+              onComplete={handleOpenCompletion}
+              onCancelReservation={handleCancelReservation}
+              onNoShow={handleNoShow}
+              onEdit={salesBlockedBySimpleRegime ? undefined : handleOpenEdit}
+              onDelete={salesBlockedBySimpleRegime ? undefined : handleDeleteSale}
               selectedId={selectedSale?.id}
               highlightedId={highlightedSaleId}
               targetId={pendingDeepLinkSaleId}
@@ -1388,6 +1656,7 @@ function VentaPageContent() {
               }}
               generatingInvoiceSaleId={generatingInvoiceSaleId}
               onGenerateElectronicInvoice={handleStartElectronicInvoice}
+              onViewDocument={(sale, kind) => setDocumentView({ sale, kind })}
             />
           )}
           <div ref={bottomRef} className="h-px w-full" />
@@ -1409,6 +1678,7 @@ function VentaPageContent() {
         open={!!detailsSale}
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
+        onComplete={handleOpenCompletion}
         onConfirm={salesBlockedBySimpleRegime ? undefined : handleConfirmSale}
         onSaveOptionalIngredients={salesBlockedBySimpleRegime ? undefined : handleSaveOptionalIngredients}
         onCancel={
@@ -1417,10 +1687,13 @@ function VentaPageContent() {
             ? undefined
             : handleDeleteSale
         }
-        onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
-          setEditingSale(sale);
-          setDetailsSale(null);
-        }}
+        onCancelReservation={
+          detailsSale != null && canCancelReservation(detailsSale)
+            ? handleCancelReservation
+            : undefined
+        }
+        onNoShow={handleNoShow}
+        onEdit={salesBlockedBySimpleRegime ? undefined : handleOpenEdit}
         confirming={confirmingSaleId === detailsSale?.id}
         taxSettingsEnabled={taxSettingsEnabled}
       />
@@ -1432,6 +1705,14 @@ function VentaPageContent() {
         business={receiptBusiness}
         fiscalDocument={receiptFiscalDocument}
       />
+
+      {documentView && (
+        <SaleDocumentModal sale={documentView.sale} kind={documentView.kind} business={receiptBusiness} onClose={() => setDocumentView(null)} />
+      )}
+
+      {quotationDoc && (
+        <QuotationDocumentModal quotation={quotationDoc} business={receiptBusiness} onClose={() => setQuotationDoc(null)} />
+      )}
 
       <FiscalDocumentDetailModal document={fiscalDetail} onClose={() => setFiscalDetail(null)} />
       <ElectronicInvoiceConfirmModal
@@ -1460,6 +1741,7 @@ function VentaPageContent() {
           onSearchChange={setQ}
           filterStatus={filterStatus}
           onFilterStatusChange={setFilterStatus}
+          filterCounts={filterCounts}
           onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
           taxSettingsEnabled={taxSettingsEnabled}
           electronicInvoicingEnabled={electronicInvoicingEnabled}

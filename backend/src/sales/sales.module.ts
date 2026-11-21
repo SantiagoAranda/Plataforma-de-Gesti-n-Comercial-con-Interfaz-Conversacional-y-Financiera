@@ -7,6 +7,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
 import { TaxModule } from '../tax/tax.module';
 import { CommonModule } from '../common/common.module';
+import { AvailabilityModule } from '../availability/availability.module';
 import { FiscalDocumentsModule } from '../fiscal-documents/fiscal-documents.module';
 
 @Module({
@@ -17,9 +18,11 @@ import { FiscalDocumentsModule } from '../fiscal-documents/fiscal-documents.modu
     ItemOptionsModule,
     TaxModule,
     CommonModule,
+    AvailabilityModule,
     FiscalDocumentsModule,
   ],
   controllers: [SalesController],
   providers: [SalesService],
+  exports: [SalesService],
 })
 export class SalesModule {}

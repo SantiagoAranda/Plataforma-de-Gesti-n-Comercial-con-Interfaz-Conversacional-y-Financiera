@@ -2,6 +2,7 @@
 
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
+import type { DocumentKind } from "@/src/components/commercial-documents/types";
 import SaleCard from "./SaleCard";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import { canGenerateElectronicInvoice, type InvoiceCapability } from "@/src/lib/sales/manualInvoiceUi";
@@ -14,6 +15,11 @@ type Props = {
   onSaleElement?: (saleId: string, element: HTMLDivElement | null) => void;
   onSelect?: (sale: Sale) => void;
   onDetails?: (sale: Sale) => void;
+  onComplete?: (sale: Sale) => void;
+  onCancelReservation?: (sale: Sale) => void;
+  onNoShow?: (sale: Sale) => void;
+  onEdit?: (sale: Sale) => void;
+  onDelete?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
@@ -29,6 +35,7 @@ type Props = {
   invoiceCapability?: InvoiceCapability;
   generatingInvoiceSaleId?: string | null;
   onGenerateElectronicInvoice?: (sale: Sale) => void;
+  onViewDocument?: (sale: Sale, kind: DocumentKind) => void;
 };
 
 function groupSalesByDate(sales: Sale[]) {
@@ -62,7 +69,7 @@ export default function SalesList({
   targetId,
   onSaleElement,
   onSelect,
-  onDetails,
+  onDetails, onComplete, onCancelReservation, onNoShow, onEdit, onDelete,
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
@@ -78,6 +85,7 @@ export default function SalesList({
   invoiceCapability,
   generatingInvoiceSaleId,
   onGenerateElectronicInvoice,
+  onViewDocument,
 }: Props) {
   const groups = groupSalesByDate(sales);
 
@@ -104,6 +112,11 @@ export default function SalesList({
             >
               <SaleCard
                 sale={s}
+                onComplete={onComplete}
+                onCancelReservation={onCancelReservation}
+                onNoShow={onNoShow}
+                onEdit={onEdit}
+                onDelete={onDelete}
                 selected={selectedId === s.id}
                 onSelect={onSelect ? () => onSelect(s) : undefined}
                 onDetails={onDetails}
@@ -122,6 +135,7 @@ export default function SalesList({
                 canGenerateElectronicInvoice={Boolean(invoiceCapability && canGenerateElectronicInvoice(s, Boolean(invoice), invoiceCapability, Boolean(generatingInvoiceSaleId)))}
                 factusEnabled={invoiceCapability?.factusEnabled === true}
                 onGenerateElectronicInvoice={onGenerateElectronicInvoice}
+                onViewDocument={onViewDocument}
               />
             </div>
             );

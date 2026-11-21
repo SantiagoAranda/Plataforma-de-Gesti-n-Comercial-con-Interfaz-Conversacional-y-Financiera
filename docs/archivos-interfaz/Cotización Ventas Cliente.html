@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumen de Pedido</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Plus Jakarta Sans / Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            green: '#00c07f',
+                            'green-hover': '#00a96f',
+                            bg: '#f8fafc',
+                            card: '#f8fafc',
+                            border: '#e2e8f0',
+                            inputBg: '#eef3fb',
+                            textDark: '#1e293b',
+                            textMuted: '#94a3b8',
+                            blueSectionBg: '#f0f7ff',
+                            blueSectionBorder: '#dbeafe',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: rgba(0, 0, 0, 0.45);
+        }
+        /* Custom scrollbar styling for the modal content */
+        .custom-scroll::-webkit-scrollbar {
+            width: 5px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-3 sm:p-4">
+
+    <!-- Modal Container -->
+    <div class="w-full max-w-[420px] bg-white rounded-[28px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh] text-slate-800 relative">
+        
+        <!-- Header -->
+        <div class="pt-6 px-6 pb-4 flex items-start justify-between bg-white z-10 border-b border-gray-50">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-xl border border-slate-100 flex items-center justify-center text-brand-green bg-white shadow-sm flex-shrink-0 mt-0.5">
+                    <i data-lucide="shopping-bag" class="w-5 h-5 stroke-[2.2]"></i>
+                </div>
+                <div>
+                    <h2 class="text-[19px] font-bold text-slate-900 leading-tight">Resumen de Pedido</h2>
+                    <p class="text-[12.5px] text-slate-400 font-normal mt-0.5">Gestiona tu pago de forma clara</p>
+                </div>
+            </div>
+            <button class="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="px-5 py-3 overflow-y-auto custom-scroll space-y-3.5 flex-1">
+
+            <!-- Item 1: Flores -->
+            <div class="bg-[#f8fafc] rounded-2xl p-3.5 border border-slate-100/80 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-[15px] text-slate-800">Flores</h3>
+                    <p class="text-brand-green font-bold text-[14px] mt-0.5">$20.000</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Quantity Controls -->
+                    <div class="flex items-center bg-gray-200/60 rounded-full px-2.5 py-1 text-slate-600 gap-3 text-xs font-semibold">
+                        <button class="hover:text-slate-900 transition-colors px-0.5">-</button>
+                        <span class="text-slate-800 text-[13px]">1</span>
+                        <button class="hover:text-slate-900 transition-colors px-0.5">+</button>
+                    </div>
+                    <!-- Actions -->
+                    <button class="p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </button>
+                    <button class="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Item 2: MacBook Pro 13 -->
+            <div class="bg-[#f8fafc] rounded-2xl p-3.5 border border-slate-100/80 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-[15px] text-slate-800">MacBook Pro 13</h3>
+                    <p class="text-brand-green font-bold text-[14px] mt-0.5">$2.399.000</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Quantity Controls -->
+                    <div class="flex items-center bg-gray-200/60 rounded-full px-2.5 py-1 text-slate-600 gap-3 text-xs font-semibold">
+                        <button class="hover:text-slate-900 transition-colors px-0.5">-</button>
+                        <span class="text-slate-800 text-[13px]">1</span>
+                        <button class="hover:text-slate-900 transition-colors px-0.5">+</button>
+                    </div>
+                    <!-- Actions -->
+                    <button class="p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </button>
+                    <button class="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Section: DATOS DEL COMPRADOR -->
+            <div class="bg-[#f2f7fd] border border-[#dce8f8] rounded-2xl p-3.5 space-y-3 mt-1">
+                <!-- Section Header -->
+                <div class="flex items-center gap-1.5">
+                    <i data-lucide="file-text" class="w-4 h-4 text-slate-600"></i>
+                    <span class="text-[11px] font-bold tracking-wider uppercase text-[#2b5278]">DATOS DEL COMPRADOR</span>
+                    <span class="text-[12px] text-slate-400 font-normal ml-1">Opcional</span>
+                </div>
+
+                <!-- Input Name -->
+                <div>
+                    <input 
+                        type="text" 
+                        value="Sebastian Jimenez Anaya" 
+                        class="w-full bg-[#e8f0fe] border border-[#3b82f6] text-slate-800 text-[14px] font-medium rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                </div>
+
+                <!-- Input Phone Row -->
+                <div class="grid grid-cols-[100px_1fr] gap-2.5">
+                    <!-- Country selector -->
+                    <div class="bg-[#eef3fb] border border-transparent rounded-xl px-2.5 py-2.5 flex items-center justify-between cursor-pointer">
+                        <div class="flex items-center gap-1.5">
+                            <!-- Colombia Flag SVG -->
+                            <svg class="w-5 h-3.5 rounded-[2px] shadow-sm flex-shrink-0" viewBox="0 0 900 600">
+                                <rect width="900" height="300" fill="#FCD116"/>
+                                <rect y="300" width="900" height="150" fill="#003893"/>
+                                <rect y="450" width="900" height="150" fill="#CE1126"/>
+                            </svg>
+                            <span class="text-[13.5px] font-medium text-slate-700">+57</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
+                    </div>
+
+                    <!-- Phone Number Input -->
+                    <input 
+                        type="tel" 
+                        value="3008656367" 
+                        class="bg-[#eef3fb] border border-transparent text-slate-800 text-[14px] font-medium rounded-xl px-3.5 py-2.5 focus:outline-none focus:bg-white focus:border-blue-400 transition-all"
+                    />
+                </div>
+
+                <!-- Segmented Control Toggle (Persona / Empresa) -->
+                <div class="bg-[#eef3fb] p-1 rounded-xl flex items-center text-[13px] font-medium">
+                    <button class="flex-1 bg-white text-slate-900 py-1.5 rounded-lg shadow-sm font-semibold flex items-center justify-center gap-1.5 transition-all">
+                        <i data-lucide="user" class="w-3.5 h-3.5 text-slate-600"></i>
+                        <span>Persona</span>
+                    </button>
+                    <button class="flex-1 text-slate-500 hover:text-slate-700 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all">
+                        <i data-lucide="building-2" class="w-3.5 h-3.5 text-slate-500"></i>
+                        <span>Empresa</span>
+                    </button>
+                </div>
+
+                <!-- Input Cédula -->
+                <div>
+                    <input 
+                        type="text" 
+                        placeholder="Cédula (Opcional)" 
+                        class="w-full bg-white border border-slate-200 text-slate-800 text-[13.5px] rounded-xl px-3.5 py-2.5 placeholder-slate-400 focus:outline-none focus:border-blue-400 transition-all"
+                    />
+                </div>
+
+                <!-- Input Correo -->
+                <div>
+                    <input 
+                        type="email" 
+                        placeholder="Correo (Opcional)" 
+                        class="w-full bg-white border border-slate-200 text-slate-800 text-[13.5px] rounded-xl px-3.5 py-2.5 placeholder-slate-400 focus:outline-none focus:border-blue-400 transition-all"
+                    />
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="p-5 bg-white border-t border-slate-100 space-y-3.5 z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+            <div class="flex items-center justify-between">
+                <span class="text-slate-800 font-semibold text-[16px]">Total a pagar</span>
+                <span class="text-slate-900 font-bold text-[22px] tracking-tight">$2.878.610</span>
+            </div>
+
+            <!-- Actions Row -->
+            <div class="space-y-2">
+                <!-- Confirm Button -->
+                <button class="w-full bg-brand-green hover:bg-brand-green-hover text-white font-semibold py-3.5 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-[15px] active:scale-[0.99]">
+                    <i data-lucide="shopping-bag" class="w-4 h-4 stroke-[2.5]"></i>
+                    <span>Confirmar Pedido</span>
+                </button>
+
+                <!-- Quote / Cotización Button -->
+                <button class="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-[14px] active:scale-[0.99]">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4 text-slate-500 stroke-[2]"></i>
+                    <span>Convertir en Cotización</span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Initialize Lucide Icons -->
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>

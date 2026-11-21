@@ -169,9 +169,14 @@ export function mapSalesActivity(orders: Sale[]): ModuleActivitySummary {
       CERRADO: "Venta completada",
       CANCELADO: "Venta cancelada",
       CONFIRMADO: "Venta confirmada",
+      FINALIZADA: "Atención finalizada",
     };
 
-    const base = statusLabel[latest.status] ?? "Venta registrada";
+    // A policy 2 confirmed booking is not a sale until the service is completed.
+    const base =
+      latest.commercialPolicyVersion === 2 && latest.reservationStatus === "CONFIRMED"
+        ? "Turno reservado"
+        : statusLabel[latest.status] ?? "Venta registrada";
     const customer = latest.customerName?.trim();
 
     if (customer && total) {

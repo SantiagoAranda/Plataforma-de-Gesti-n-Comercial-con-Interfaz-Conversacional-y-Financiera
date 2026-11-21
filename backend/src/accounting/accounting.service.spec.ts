@@ -1141,7 +1141,8 @@ describe('AccountingService simple tax dashboard projection', () => {
         netProfitAfterSimpleTax: 49200000,
       }),
     );
-    expect(result.gastosAdministrativos.nominaSueldos).toBe(480000);
+    // This fixture posts SIMPLE tax (519595), not payroll (5105/5205).
+    expect(result.gastosAdministrativos.nominaSueldos).toBe(0);
     expect(result.balanceTotal).toBe(49200000);
     expect(result.impuestosReservas.iva).toBe(0);
     expect(result.impuestosReservas.retenciones).toBe(0);

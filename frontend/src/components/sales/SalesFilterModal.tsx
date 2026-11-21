@@ -3,7 +3,7 @@
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export type FilterStatus = "ALL" | "PENDING" | "CLOSED" | "CANCELLED";
+export type FilterStatus = "ALL" | "PENDING" | "CLOSED" | "CANCELLED" | "CONFIRMED" | "COMPLETED" | "NO_SHOW" | "QUOTATIONS";
 
 type Props = {
   open: boolean;
@@ -16,7 +16,10 @@ const OPTIONS: { value: FilterStatus; label: string }[] = [
   { value: "ALL", label: "Todas las ventas" },
   { value: "PENDING", label: "Pendientes (y por cobrar)" },
   { value: "CLOSED", label: "Cerradas (cobradas)" },
+  { value: "CONFIRMED", label: "Atenciones confirmadas" },
+  { value: "COMPLETED", label: "Atenciones finalizadas" },
   { value: "CANCELLED", label: "Canceladas" },
+  { value: "NO_SHOW", label: "Ausencias (no asistió)" },
 ];
 
 export default function SalesFilterModal({ open, onClose, status, onChange }: Props) {

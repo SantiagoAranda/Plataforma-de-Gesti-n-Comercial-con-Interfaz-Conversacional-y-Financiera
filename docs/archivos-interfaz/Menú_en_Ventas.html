@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SACTEC - Tarjeta de Factura y Menú Contextual</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Generador de código QR (factura electrónica DIAN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <!-- Generación de PDF para compartir -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- FontAwesome para iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Fuente Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,600;1,700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+        }
+        /* Sombras exactas y estilos visuales calcados de SACTEC UI */
+        .card-container {
+            box-shadow: 0 4px 25px -4px rgba(0, 0, 0, 0.06);
+        }
+        .popover-shadow {
+            box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+        }
+        /* Color verde SACTEC para el botón WhatsApp */
+        .bg-whatsapp {
+            background-color: #25d366;
+        }
+        .bg-whatsapp:hover {
+            background-color: #20bd5a;
+        }
+
+        /* ===== Formatos de factura (vista previa e impresión) ===== */
+        /* ===== Carta v5: estilo "Invoice" gris (título bold cursiva, bloque de logo, barra lateral, bandas grises) ===== */
+        .sheet-carta, .sheet-carta * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .sheet-carta { --paper: #ffffff; --ink: #1d1d1f; --soft: #4b4b50; --mute: #7b7b80; --band: #d9d9db; --band2: #cdcdd0; --rule: #dedee0; --dark: #2a2a2c; --tick: #8c8c91;
+            position: relative; display: flex; flex-direction: column; line-height: 1.45; }
+        .cv-main { position: relative; flex: 1; display: flex; flex-direction: column; padding: 40px 48px 0; }
+
+        /* Encabezado: título + bloque gris con logo (pegado al borde superior) */
+        .cv-hero { position: relative; box-sizing: border-box; padding-top: 50px; min-height: 96px; }
+        .cv-logobox { position: absolute; top: -40px; right: 4px; width: 132px; height: 134px; background: var(--band); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; }
+        .cv-mark { width: 50px; height: 50px; border: 3px solid var(--ink); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; font-style: italic; color: var(--ink); }
+        .cv-markname { font-size: 8.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--soft); }
+        .cv-title { font-weight: 700; font-style: italic; letter-spacing: .2em; text-transform: uppercase; color: var(--ink); line-height: 1.1; }
+        .cv-subtitle { font-size: 10px; color: var(--mute); margin-top: 6px; letter-spacing: .02em; }
+        .cv-chip { display: inline-flex; align-items: center; padding: 1px 9px; border: 1px solid var(--dark); border-radius: 999px; font-size: 8.5px; font-weight: 600; color: var(--dark); }
+
+        /* Partes */
+        .cv-parties { display: grid; grid-template-columns: 215px minmax(0, 1fr); column-gap: 30px; margin-top: 22px; align-items: start; }
+        .cv-plbl { font-size: 9.5px; color: var(--mute); }
+        .cv-pname { font-size: 13.5px; font-weight: 700; line-height: 1.25; margin-top: 2px; color: var(--ink); }
+        .cv-psub { font-size: 9.5px; color: var(--soft); margin-top: 1px; }
+        .cv-pk { font-size: 9.5px; font-weight: 700; margin-top: 9px; color: var(--ink); }
+        .cv-pt { font-size: 9.5px; color: var(--soft); }
+        .cv-pt b { color: var(--ink); font-weight: 700; }
+        .cv-pt.sp { margin-top: 8px; }
+
+        /* Cuerpo: barra lateral + columna de tabla */
+        .cv-body { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 29px; margin-top: 22px; align-items: start; }
+        .cv-col { min-width: 0; }
+        .cv-side { min-width: 0; }
+        .cv-sec { margin-bottom: 14px; }
+        .cv-sec::before, .cv-side:not(:empty)::after { content: ''; display: block; width: 58px; border-top: 1px solid var(--tick); }
+        .cv-sec::before { margin-bottom: 14px; }
+        .cv-st { font-size: 10.5px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+        .cv-sl { font-size: 9px; font-weight: 600; color: var(--ink); margin-top: 7px; }
+        .cv-sv { font-size: 9.5px; color: var(--soft); overflow-wrap: anywhere; }
+        .cv-sbig { font-size: 15px; font-weight: 700; margin-top: 3px; white-space: nowrap; color: var(--ink); }
+        .cv-line { border-bottom: 1px solid #a9a9ae; height: 20px; }
+        .cv-sub { font-size: 8.5px; color: var(--mute); margin-top: 2px; }
+
+        /* Tabla */
+        .cv-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+        .cv-table th { background: var(--band); font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: 11px 12px; text-align: left; color: var(--soft); white-space: nowrap; }
+        .cv-table td { padding: 11px 12px; vertical-align: top; border-bottom: 1px solid var(--rule); color: var(--soft); }
+        .cv-table tbody tr:last-child td { border-bottom: 1px solid var(--dark); }
+        .cv-table tr { page-break-inside: avoid; }
+        .cv-table td.c, .cv-table td.r { white-space: nowrap; }
+        .cv-table .c, .cv-table .k { text-align: center; }
+        .cv-table .r { text-align: right; }
+        .cv-table td.r:last-child { font-weight: 600; color: var(--ink); }
+        .cv-table td.d { overflow-wrap: anywhere; }
+        .cv-prod { font-weight: 500; color: var(--ink); }
+        .cv-det { font-size: 8.5px; color: var(--mute); margin-top: 1px; line-height: 1.4; }
+        .cv-check { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #8a8a8e; border-radius: 3px; vertical-align: middle; }
+
+        /* Totales */
+        .cv-trow { display: flex; justify-content: space-between; padding: 11px 12px; font-size: 10.5px; color: var(--soft); border-bottom: 1px solid var(--rule); }
+        .cv-trow span:last-child { font-weight: 600; color: var(--ink); }
+        .cv-grand { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 13px 12px; background: var(--band2); }
+        .cv-grand .t { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+        .cv-grand .a { font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+        .cv-net { display: flex; justify-content: space-between; padding: 9px 12px 0; font-size: 10px; font-weight: 600; color: var(--soft); }
+        .cv-words { margin-top: 12px; padding: 0 12px; }
+        .cv-wt { font-size: 10px; font-style: italic; color: var(--soft); margin-top: 2px; }
+
+        /* Parte inferior: contacto · términos · firma */
+        .cv-bottom { display: grid; grid-template-columns: 160px minmax(0, 1fr) 150px; column-gap: 29px; margin-top: 26px; align-items: start; }
+        .cv-bt { font-size: 10px; font-weight: 700; color: var(--ink); }
+        .cv-btx { font-size: 9px; color: var(--soft); line-height: 1.55; margin-top: 3px; }
+        .cv-btx.sp { margin-top: 8px; }
+        .cv-thanks { margin-top: 14px; font-size: 9px; color: var(--mute); }
+        .cv-thanks b { display: block; font-size: 10px; color: var(--ink); font-weight: 700; }
+        .cv-signs { text-align: center; }
+        .cv-sg { margin-top: 38px; border-top: 1px solid var(--ink); padding-top: 6px; font-size: 9px; color: var(--mute); line-height: 1.4; }
+        .cv-sg:first-child { margin-top: 30px; }
+        .cv-sg b { display: block; font-size: 9.5px; font-weight: 700; color: var(--ink); }
+
+        /* DIAN (QR + CUFE) */
+        .cv-fine { font-size: 8.5px; color: var(--soft); line-height: 1.55; margin-top: 3px; }
+        .cv-dian { display: flex; gap: 14px; align-items: flex-start; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--tick); }
+        .cv-qr { width: 84px; height: 84px; flex-shrink: 0; background: #fff; padding: 4px; box-sizing: border-box; }
+        .cv-qr svg { width: 100%; height: 100%; display: block; }
+        .cv-qr-off { width: 100%; height: 100%; border: 1px dashed #b9b9bd; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 8px; color: var(--mute); padding: 4px; box-sizing: border-box; }
+        .cv-dhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .cv-seal { display: flex; gap: 6px; align-items: center; justify-content: flex-end; text-align: right; flex-shrink: 0; }
+        .cv-seal i { font-size: 16px; color: var(--ink); }
+        .cv-seal b { display: block; font-size: 9.5px; font-weight: 600; }
+        .cv-seal span { display: block; font-size: 8px; color: var(--mute); }
+        .cv-cufe { font-family: 'Courier New', ui-monospace, monospace; font-size: 7.2px; letter-spacing: -.1px; word-break: break-all; line-height: 1.3; margin: 2px 0 4px; color: var(--ink); }
+
+        /* Continuación y pie (banda gris) */
+        .cv-chead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 14px; margin-bottom: 4px; background: var(--band); font-size: 9.5px; color: var(--soft); }
+        .cv-chead b { color: var(--ink); font-style: italic; letter-spacing: .2em; text-transform: uppercase; font-size: 11px; }
+        .cv-foot { margin: auto -48px 0; padding: 15px 48px; background: var(--band); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+        .cv-foot .l { font-size: 9px; font-weight: 600; color: var(--ink); }
+        .cv-foot .r { font-size: 8.5px; color: var(--soft); }
+        .cv-pages { display: flex; flex-direction: column; gap: 20px; width: 816px; }
+        #cv-measure { position: absolute; left: -10000px; top: 0; width: 816px; visibility: hidden; pointer-events: none; }
+
+        #print-root { display: none; }
+        .sheet-carta { width: 816px; height: 1056px; overflow: hidden; background: var(--paper); color: var(--ink); box-shadow: 0 4px 22px rgba(0,0,0,.28); box-sizing: border-box; font-family: 'Poppins', 'Inter', sans-serif; font-size: 12px; }
+        .sheet-ticket { width: 302px; background: #fff; color: #000; padding: 14px 12px 18px; box-sizing: border-box; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.35; }
+        .sheet-ticket .c { text-align: center; }
+        .sheet-ticket .b { font-weight: 700; }
+        .sheet-ticket .line { border-top: 1px dashed #000; margin: 8px 0; }
+        .sheet-ticket .f { display: flex; justify-content: space-between; gap: 8px; }
+        .sheet-ticket .big { font-size: 15px; font-weight: 700; }
+        .sheet-ticket.w58 { width: 219px; font-size: 10.5px; padding: 12px 8px 16px; }
+        .sheet-ticket.w58 .big { font-size: 13px; }
+        @media print {
+            html, body { background: #fff !important; }
+            body > *:not(#print-root) { display: none !important; }
+            #print-root { display: block !important; }
+            .cv-pages { display: block !important; width: auto !important; }
+            .sheet-carta { width: 8.5in; height: 10.96in; box-shadow: none; break-after: page; page-break-after: always; }
+            .sheet-carta:last-child { break-after: auto; page-break-after: auto; }
+            .sheet-ticket { width: 72mm; margin: 0 auto; padding: 4mm 0; }
+            .sheet-ticket.w58 { width: 48mm; padding: 3mm 0; }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-200 min-h-screen flex items-center justify-center p-0 sm:p-4">
+
+    <!-- Mobile Screen Frame -->
+    <div class="w-full max-w-[412px] bg-[#f8fafc] min-h-[100vh] sm:min-h-[880px] sm:rounded-[36px] overflow-hidden shadow-2xl flex flex-col justify-between border border-slate-300 relative">
+        
+        <div>
+            <!-- Top App Bar (SACTEC Header) -->
+            <div class="bg-[#0b1b2d] text-white px-5 py-3.5 flex justify-between items-center shadow-md">
+                <div>
+                    <h1 class="font-extrabold text-lg tracking-wider text-white">SACTEC</h1>
+                    <p class="text-[11px] text-slate-400 font-medium -mt-1">sactec.dev</p>
+                </div>
+                <button class="p-1 text-slate-300 hover:text-white transition">
+                    <i class="fa-solid fa-ellipsis-vertical text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Contenido Principal -->
+            <div class="p-3.5 space-y-3.5">
+                
+                <!-- Barra de Fecha y Filtro de Limpieza -->
+                <div class="bg-white rounded-2xl p-2.5 px-3 flex items-center justify-between text-slate-700 border border-slate-100 shadow-sm">
+                    <button class="text-slate-400 hover:text-slate-600 px-2 py-1">
+                        <i class="fa-solid fa-chevron-left text-xs"></i>
+                    </button>
+                    <div class="flex items-center space-x-2 font-bold text-sm text-[#0b1b2d]">
+                        <i class="fa-regular fa-calendar-check text-slate-500 text-base"></i>
+                        <span>Dom, 27 Sept</span>
+                    </div>
+                    <button class="text-slate-400 hover:text-slate-600 px-2 py-1">
+                        <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </button>
+                    <button class="bg-[#eaf1f8] hover:bg-slate-200 text-[#2b5178] font-bold text-[11px] px-3.5 py-1.5 rounded-xl transition tracking-wide uppercase">
+                        LIMPIAR
+                    </button>
+                </div>
+
+                <div id="empty-state" class="hidden bg-white border border-dashed border-slate-300 rounded-[24px] p-8 text-center">
+                    <i class="fa-regular fa-folder-open text-3xl text-slate-300"></i>
+                    <p class="mt-2 text-sm font-bold text-slate-600">No hay documentos en este estado</p>
+                    <button onclick="setFilter('todas')" class="mt-3 text-xs font-bold text-[#2b5178] bg-[#eaf1f8] hover:bg-slate-200 px-4 py-2 rounded-xl transition">Ver todas</button>
+                </div>
+
+                <!-- Tarjeta Principal de la Factura -->
+                <div id="invoice-card" class="bg-white border border-slate-200/80 rounded-[24px] p-4 card-container relative">
+                    
+                    <!-- Fila Superior: Cliente + Badge + Tres Puntos -->
+                    <div class="flex items-center justify-between pb-3">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-11 h-11 bg-[#e2f7ed] text-[#1aa060] rounded-full flex items-center justify-center font-bold text-lg">
+                                S
+                            </div>
+                            <div>
+                                <h2 class="font-bold text-[#0b1b2d] text-base leading-snug">Sebastian</h2>
+                                <p class="text-xs text-slate-400 font-medium">Ref: #F345</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <!-- Estado (toca para cambiarlo) -->
+                            <button id="status-badge" onclick="toggleStatusMenu()" class="font-bold text-[12px] px-3 py-1 rounded-full flex items-center gap-1.5 transition active:scale-95" aria-haspopup="true"></button>
+                            
+                            <!-- Botón Tres Puntos -->
+                            <button id="menu-btn" onclick="toggleMenu()" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition focus:outline-none">
+                                <i class="fa-solid fa-ellipsis-vertical text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- MENÚ DE TRES PUNTOS (reorganizado por frecuencia de uso) -->
+                    <div id="status-menu" role="menu" class="hidden absolute right-3 top-14 w-52 bg-white rounded-2xl popover-shadow z-50 border border-slate-100 overflow-hidden py-1.5"></div>
+
+                    <div id="dropdown-menu" role="menu" class="dropdown-menu hidden absolute right-3 top-14 w-64 bg-white rounded-2xl popover-shadow z-50 border border-slate-100 overflow-hidden py-1.5 text-slate-800"></div>
+
+                    <!-- Detalles del Producto -->
+                    <div class="py-2.5 px-3 bg-slate-50/80 rounded-2xl border border-slate-100 my-2">
+                        <div class="flex justify-between items-baseline">
+                            <h3 class="font-bold text-[#0b1b2d] text-sm">Acril blu</h3>
+                            <span class="text-xs text-slate-400 font-semibold">$1.000.000 c/u</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-2">MONTO TOTAL</p>
+                    </div>
+
+                    <!-- Cuadrícula de Impuestos e IVA -->
+                    <div class="grid grid-cols-2 gap-y-3 gap-x-6 py-3 border-t border-slate-100 text-xs">
+                        <div>
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">IVA</span>
+                            <span class="font-bold text-[#d9531e] text-sm">$ 190.000</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">RETEFUENTE</span>
+                            <span class="font-bold text-[#d9531e] text-sm">$ 0</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">RETEIVA</span>
+                            <span class="font-bold text-[#d9531e] text-sm">$ 0</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">RETEICA</span>
+                            <span class="font-bold text-[#d9531e] text-sm">$ 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Totales Cobrado vs Neto -->
+                    <div class="pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <div>
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">TOTAL COBRADO</span>
+                            <span class="font-extrabold text-[#0b1b2d] text-base">$ 1.190.000</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-slate-400 uppercase text-[10px] font-extrabold tracking-wider block">NETO RECIBIDO</span>
+                            <span class="font-extrabold text-[#1aa060] text-base">$ 1.190.000</span>
+                        </div>
+                    </div>
+
+                    <!-- Botones Principales WhatsApp & Ver Factura -->
+                    <div class="mt-4 flex items-center space-x-2">
+                        <button onclick="notifyAction('Iniciando WhatsApp...')" class="flex-1 bg-whatsapp hover:bg-emerald-600 text-white font-extrabold py-3 px-3 rounded-2xl flex items-center justify-center space-x-2 text-xs transition tracking-wide active:scale-98 shadow-sm">
+                            <i class="fa-brands fa-whatsapp text-lg"></i>
+                            <span>WHATSAPP</span>
+                        </button>
+                        <button id="primary-btn" onclick="primaryAction()" class="border border-slate-200 hover:border-slate-300 bg-white text-[#2b5178] font-extrabold py-3 px-4 rounded-2xl flex items-center justify-center space-x-2 text-xs transition active:scale-98">
+                            <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                            <span id="primary-label" class="uppercase tracking-wide">VER FACTURA</span>
+                        </button>
+                    </div>
+
+                    <!-- Pie de la Tarjeta con Badges -->
+                    <div class="mt-3.5 flex items-center justify-between text-[11px]">
+                        <div class="flex space-x-1.5">
+                            <span class="bg-[#f0f4f8] text-slate-600 px-3 py-1 rounded-lg font-medium">Manual</span>
+                            <span class="bg-[#f0f4f8] text-slate-600 px-3 py-1 rounded-lg font-medium">Efectivo</span>
+                        </div>
+                        <div class="flex items-center space-x-1 font-medium text-slate-400">
+                            <span>03:13 p. m.</span>
+                            <i class="fa-solid fa-check-double text-[#38bdf8] text-xs"></i>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Barra Inferior de Navegación y Filtros -->
+        <div class="p-3.5 bg-white border-t border-slate-100 sm:rounded-b-[36px]">
+            <!-- Buscador Integrado -->
+            <div class="flex items-center space-x-2 bg-slate-50 border border-slate-200/90 rounded-full p-1.5 pl-3 shadow-inner mb-3">
+                <i class="fa-solid fa-plus text-slate-400 text-sm"></i>
+                <input type="text" placeholder="Buscar por cliente o ID..." class="bg-transparent w-full text-xs text-slate-700 focus:outline-none font-medium placeholder-slate-400">
+                <div class="flex items-center space-x-1 text-xs font-semibold text-slate-600 bg-white px-2.5 py-1 rounded-full border border-slate-200 shadow-sm cursor-pointer whitespace-nowrap">
+                    <span>General</span>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
+                </div>
+                <button class="bg-[#0b1b2d] text-white w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                    <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                </button>
+            </div>
+
+            <!-- Chips de Filtro -->
+            <div id="filter-chips" class="flex space-x-2 overflow-x-auto pb-1 text-xs no-scrollbar"></div>
+        </div>
+
+        <!-- Toast de Notificaciones (Feedback visual) -->
+        <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none flex items-center space-x-2 z-[200]">
+            <i class="fa-solid fa-circle-check text-emerald-400 text-sm"></i>
+            <span id="toast-message">Acción realizada</span>
+        </div>
+
+    </div>
+
+
+    <!-- Visor de documentos: Factura / Orden de entrega (Carta / Ticket) -->
+    <div id="invoice-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 flex flex-col">
+        <div class="bg-[#0b1b2d] text-white px-4 pt-3 pb-3 space-y-2.5">
+            <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2 min-w-0">
+                    <i id="doc-icon" class="fa-regular fa-file-lines text-slate-300"></i>
+                    <span id="doc-title" class="font-bold text-sm truncate">Factura #F345</span>
+                </div>
+                <button onclick="closeInvoice()" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center" aria-label="Cerrar">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex bg-white/10 rounded-full p-1 text-xs font-bold">
+                    <button id="tab-carta" onclick="showFormat('carta')" class="px-3.5 py-1.5 rounded-full transition">Carta</button>
+                    <button id="tab-ticket" onclick="showFormat('ticket')" class="px-3.5 py-1.5 rounded-full transition">Ticket</button>
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <button onclick="printInvoice()" class="bg-white text-[#0b1b2d] hover:bg-slate-100 font-extrabold text-xs uppercase tracking-wide px-3.5 py-2 rounded-xl flex items-center gap-1.5">
+                        <i class="fa-solid fa-print"></i> Imprimir
+                    </button>
+                    <button onclick="savePdf()" title="Descargar PDF" aria-label="Descargar PDF" class="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5">
+                        <i class="fa-regular fa-circle-down"></i><span class="hidden sm:inline">PDF</span>
+                    </button>
+                    <button onclick="shareInvoice()" title="Compartir" aria-label="Compartir" class="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5">
+                        <i class="fa-solid fa-share-nodes"></i><span class="hidden sm:inline">Compartir</span>
+                    </button>
+                    <button id="btn-xml" onclick="notifyAction('Descargando XML...')" title="Descargar XML" aria-label="Descargar XML" class="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-code"></i><span class="hidden sm:inline">XML</span>
+                    </button>
+                </div>
+            </div>
+            <div id="ticket-size" class="hidden items-center justify-between gap-3 bg-white/10 rounded-xl px-3 py-2">
+                <span class="text-xs font-semibold flex items-center gap-2"><i class="fa-solid fa-ruler-horizontal text-slate-300"></i> Ancho del papel</span>
+                <div class="flex bg-white/10 rounded-full p-0.5 text-xs font-bold">
+                    <button id="w-80" onclick="setTicketWidth(80)" class="px-3.5 py-1 rounded-full transition">80 mm</button>
+                    <button id="w-58" onclick="setTicketWidth(58)" class="px-3.5 py-1 rounded-full transition">58 mm</button>
+                </div>
+            </div>
+            <label id="price-toggle" class="hidden items-center justify-between gap-3 bg-white/10 rounded-xl px-3 py-2 cursor-pointer select-none">
+                <span class="text-xs font-semibold flex items-center gap-2"><i class="fa-solid fa-tag text-slate-300"></i> Mostrar precios</span>
+                <span class="relative inline-block w-9 h-5">
+                    <input id="price-check" type="checkbox" checked onchange="togglePrices(this.checked)" class="peer sr-only">
+                    <span class="absolute inset-0 rounded-full bg-slate-500 peer-checked:bg-emerald-500 transition"></span>
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition peer-checked:translate-x-4"></span>
+                </span>
+            </label>
+            <div id="signed-panel" class="hidden flex-col gap-2 bg-white/10 rounded-xl px-3 py-2">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-semibold flex items-center gap-2 min-w-0"><i class="fa-solid fa-file-signature text-slate-300"></i><span class="truncate">Orden de entrega firmada</span></span>
+                    <span id="signed-chip" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 flex-shrink-0">Pendiente</span>
+                </div>
+                <div id="signed-empty">
+                    <label for="signed-input" id="signed-drop" class="flex items-center justify-center gap-2 border border-dashed border-white/30 hover:border-white/60 rounded-lg px-3 py-2.5 text-xs font-bold cursor-pointer transition">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Subir orden firmada <span class="font-medium text-slate-300 hidden sm:inline">· PDF o foto, máx. 10 MB</span>
+                    </label>
+                </div>
+                <div id="signed-file" class="hidden items-center gap-2">
+                    <div id="signed-thumb" class="w-9 h-9 rounded-md bg-white/10 flex items-center justify-center overflow-hidden flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div id="signed-name" class="text-xs font-bold truncate"></div>
+                        <div id="signed-meta" class="text-[10px] text-slate-300 truncate"></div>
+                    </div>
+                    <button onclick="viewSigned()" title="Ver archivo" aria-label="Ver archivo" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-xs"><i class="fa-solid fa-eye"></i></button>
+                    <label for="signed-input" title="Reemplazar" aria-label="Reemplazar archivo" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-xs cursor-pointer"><i class="fa-solid fa-arrows-rotate"></i></label>
+                    <button onclick="removeSigned()" title="Quitar" aria-label="Quitar archivo" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-red-500/40 flex items-center justify-center text-xs"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+                <input id="signed-input" type="file" accept="application/pdf,image/*" class="hidden" onchange="onSignedPicked(this)">
+            </div>
+        </div>
+        <div id="preview-scroll" class="flex-1 overflow-auto p-4">
+            <div id="preview-wrap" class="mx-auto shadow-2xl">
+                <div id="preview-inner" style="transform-origin: top left;"></div>
+            </div>
+        </div>
+    </div>
+    <div id="print-root"></div>
+
+    <!-- Script de Interacción -->
+    <script>
+
+        /* ===== Datos de la factura (editar aquí) ===== */
+        const INVOICE = {
+            empresa: {
+                nombre: 'SACTEC', razon: 'SACTEC S.A.S.', web: 'sactec.dev', nit: 'NIT 900.000.000-0',
+                dir: 'Dirección de la empresa', ciudad: 'Medellín, Antioquia', tel: 'Tel. 300 000 0000', email: 'facturacion@sactec.dev',
+                regimen: 'Responsable de IVA',
+                responsabilidades: 'O-13 · O-15 · O-48',        // códigos del RUT (casilla 53)
+                ciiu: '6201'
+            },
+            numero: 'F345',                                     // prefijo + consecutivo (NumFac)
+            fecha: 'Domingo, 27 de septiembre de 2026',
+            hora: '03:13 p. m.',
+            cliente: { nombre: 'Sebastian', tipoDoc: 'C.C.', doc: '222222222222', consumidor: true,
+                       dir: 'Dirección del cliente', ciudad: 'Medellín, Antioquia', tel: '300 000 0000', email: 'cliente@correo.com' },
+            items: [
+                    { desc: 'Acril blu', cod: 'P001', cant: 1, unit: 1000000, det: 'Cuñete 5 galones · acabado satinado' },
+                    { desc: 'Vinilo tipo 1 blanco galón', cant: 4, unit: 58000, det: 'Lavable, cubrimiento alto' },
+                    { desc: 'Pintura esmalte sintético negro', cant: 2, unit: 72500 },
+                    { desc: 'Rodillo de felpa 9"', cant: 6, unit: 14500, det: 'Para muros lisos' },
+                    { desc: 'Brocha 4" cerda sintética', cant: 5, unit: 12800 },
+                    { desc: 'Cinta de enmascarar 48 mm', cant: 12, unit: 6200, det: 'Rollo x 40 m' },
+                    { desc: 'Masilla plástica 1/4 de galón', cant: 3, unit: 31000 },
+                    { desc: 'Lija al agua No. 220', cant: 20, unit: 1800, det: 'Pliego' },
+                    { desc: 'Thinner corriente galón', cant: 2, unit: 36900 },
+                    { desc: 'Sellador acrílico galón', cant: 3, unit: 64000, det: 'Uso interior y exterior' },
+                    { desc: 'Estuco plástico 25 kg', cant: 4, unit: 49500 },
+                    { desc: 'Bandeja para pintura', cant: 6, unit: 7900 },
+                    { desc: 'Extensión telescópica para rodillo', cant: 2, unit: 38000, det: 'Aluminio · 1,2 a 2 m' },
+                    { desc: 'Plástico protector 4 x 5 m', cant: 8, unit: 5400 },
+                    { desc: 'Removedor de pintura y barniz galón, uso interior y exterior, incluye guantes', cant: 1, unit: 89000, det: 'Referencia con descripción larga para probar el salto de línea' }
+                ],
+            iva: 465652, retefuente: 0, reteiva: 0, reteica: 0,
+            medio: 'Efectivo', origen: 'Manual',
+            formaPago: 'Contado', vence: '',                    // 'Contado' | 'Crédito' (con fecha de vencimiento AAAA-MM-DD)
+            /* ----- Datos de facturación electrónica DIAN ----- */
+            dian: {
+                ambiente: 2,                                    // 1 = producción · 2 = habilitación (pruebas)
+                fechaISO: '2026-09-27', horaISO: '15:13:00-05:00',   // FecFac / HorFac (formato del Anexo Técnico)
+                validacion: '2026-09-27 15:13:41',              // fecha-hora de validación devuelta por la DIAN
+                resolucion: {                                   // resolución de autorización de numeración
+                    numero: '18760000001', fecha: '2026-01-15', prefijo: 'F', desde: 1, hasta: 5000, vigHasta: '2028-01-15',
+                    claveTecnica: 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c'   // ClTec del rango (reemplazar por la real)
+                },
+                software: { nombre: 'SACTEC', fabricante: 'SACTEC S.A.S.', nit: '900.000.000-0' }
+            }
+        };
+        const QR_MODO = 'anexo';   // 'anexo' = texto con campos + URL (Anexo Técnico) · 'url' = solo URL de consulta DIAN
+        const money = n => '$ ' + Number(n).toLocaleString('es-CO');
+        const subtotal = () => INVOICE.items.reduce((a, i) => a + i.cant * i.unit, 0);
+        const total = () => subtotal() + INVOICE.iva;
+        const neto = () => total() - INVOICE.retefuente - INVOICE.reteiva - INVOICE.reteica;
+
+        /* ===== Carta v2: helpers de diseño ===== */
+        const THEMES = {
+            factura:     { c1: '#4a4a4c', c2: '#4a4a4c' },
+            entrega:     { c1: '#4a4a4c', c2: '#4a4a4c' },
+            cotizacion:  { c1: '#4a4a4c', c2: '#4a4a4c' },
+            comprobante: { c1: '#4a4a4c', c2: '#4a4a4c' }
+        };
+        const FECHA_LARGA = '27 de septiembre de 2026', FECHA_CORTA = '27 sep 2026', DIA = 'Domingo';
+
+        const U_ = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós', 'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete', 'veintiocho', 'veintinueve'];
+        const D_ = ['', '', '', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+        const C_ = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+        function lt1000(n) {
+            if (n === 100) return 'cien';
+            const c = Math.floor(n / 100), r = n % 100, out = [];
+            if (c) out.push(C_[c]);
+            if (r) out.push(r < 30 ? U_[r] : D_[Math.floor(r / 10)] + (r % 10 ? ' y ' + U_[r % 10] : ''));
+            return out.join(' ');
+        }
+        const apocope = t => t.replace(/veintiuno$/, 'veintiún').replace(/uno$/, 'un');
+        function numLetras(n) {
+            n = Math.round(n);
+            if (n === 0) return 'Cero pesos M/CTE';
+            const mill = Math.floor(n / 1e6), mil = Math.floor((n % 1e6) / 1000), r = n % 1000, out = [];
+            if (mill) out.push(mill === 1 ? 'un millón' : apocope(lt1000(mill)) + ' millones');
+            if (mil) out.push(mil === 1 ? 'mil' : apocope(lt1000(mil)) + ' mil');
+            if (r) out.push(lt1000(r));
+            const txt = out.join(' ') + (n % 1e6 === 0 ? ' de' : '') + ' pesos M/CTE';
+            return txt.charAt(0).toUpperCase() + txt.slice(1);
+        }
+
+        const docNum = () => INVOICE.numero.replace(/\D/g, '');
+
+        function cvHero(kicker, sub) {
+            const E = INVOICE.empresa;
+            const len = kicker.length, size = len <= 10 ? 30 : len <= 16 ? 26 : 22;
+            return `<div class="cv-hero">
+                <div class="cv-logobox"><div class="cv-mark">${E.nombre.charAt(0)}</div><div class="cv-markname">${E.nombre}</div></div>
+                <div class="cv-title" style="font-size:${size}px">${kicker}</div>
+                ${sub ? `<div class="cv-subtitle">${sub}</div>` : ''}
+            </div>`;
+        }
+        function cvChip() {
+            const st = STATUSES[currentStatus];
+            return `<span class="cv-chip">${st.label}</span>`;
+        }
+        /* Partes: cliente (izq.) y emisor (der.). addr = mostrar dirección del cliente */
+        function cvParties(toLabel, C, addr, fromLines) {
+            const E = INVOICE.empresa;
+            const to = `<div>
+                <div class="cv-plbl">${toLabel}</div>
+                <div class="cv-pname">${C.nombre}</div>
+                <div class="cv-psub">${clienteDoc()}</div>
+                ${addr ? `<div class="cv-pk">Dirección</div><div class="cv-pt">${[C.dir, C.ciudad].filter(Boolean).join('<br>')}</div>` : ''}
+                ${C.tel ? `<div class="cv-pt sp"><b>T :</b> ${C.tel}</div>` : ''}
+                ${C.email ? `<div class="cv-pt${C.tel ? '' : ' sp'}"><b>E :</b> ${C.email}</div>` : ''}
+            </div>`;
+            const from = `<div>
+                <div class="cv-plbl">Emitido por:</div>
+                <div class="cv-pname">${E.razon}</div>
+                ${fromLines.filter(Boolean).map(l => `<div class="cv-psub">${l}</div>`).join('')}
+            </div>`;
+            return `<div class="cv-parties">${to}${from}</div>`;
+        }
+        /* Barra lateral: secciones { t: título, rows: [[etiqueta, valor]], html } */
+        const cvSide = secs => secs.map(s => `<div class="cv-sec">${s.t ? `<div class="cv-st">${s.t}</div>` : ''}${(s.rows || []).filter(r => r[1]).map(([l, v]) => `<div class="cv-sl">${l} :</div><div class="cv-sv">${v}</div>`).join('')}${s.html || ''}</div>`).join('');
+        const cvBody = (side, col) => `<div class="cv-body"><div class="cv-side">${side}</div><div class="cv-col">${col}</div></div>`;
+        function cvTable(cols, rows) {
+            return `<table class="cv-table"><thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : c.c ? 'c' : c.k ? 'k' : 'd'}"${c.w ? ` style="width:${c.w}"` : ''}>${c.t}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+        }
+        function cvRowList(opts) {   // opts: {prices, check} -> array de <tr>   (orden: descripción · cant. · valor unit. · total)
+            return INVOICE.items.map(i => {
+                const sub = [i.cod ? 'Cód. ' + i.cod : '', i.det].filter(Boolean).join(' · ');
+                return `<tr>
+                ${opts.check ? '<td class="k"><span class="cv-check"></span></td>' : ''}
+                <td class="d"><div class="cv-prod">${i.desc}</div>${sub ? `<div class="cv-det">${sub}</div>` : ''}</td>
+                <td class="c">${i.cant}</td>
+                ${opts.prices ? `<td class="r">${money(i.unit)}</td>` : ''}
+                ${opts.prices ? `<td class="r">${money(i.cant * i.unit)}</td>` : ''}
+            </tr>`; });
+        }
+        const COL_CHK = { t: '', k: 1, w: '6%' };
+        const COLS_PRICES = [{ t: 'Descripción' }, { t: 'Cant.', c: 1, w: '11%' }, { t: 'Valor unit.', r: 1, w: '21%' }, { t: 'Total', r: 1, w: '21%' }];
+        const COLS_FACTURA = COLS_PRICES;   // factura electrónica: sin columna de IVA (el IVA se discrimina en los totales)
+        const COLS_NOPRICE = [{ t: 'Descripción' }, { t: 'Cant.', c: 1, w: '14%' }];
+
+        const cvWords = () => `<div class="cv-words"><div class="cv-bt">Valor en letras</div><div class="cv-wt">${numLetras(total())}</div></div>`;
+        function cvTotals(grandLabel, withRet, withNet, withIvaRate, words = true) {
+            const I = INVOICE;
+            const rets = withRet ? [['Retefuente', I.retefuente], ['ReteIVA', I.reteiva], ['ReteICA', I.reteica]].filter(r => r[1] > 0) : [];
+            return `<div class="cv-tot">
+                <div class="cv-trow"><span>Subtotal</span><span>${money(subtotal())}</span></div>
+                <div class="cv-trow"><span>${withIvaRate ? `IVA (${ivaRate()}%)` : 'IVA'}</span><span>${money(I.iva)}</span></div>
+                ${rets.map(r => `<div class="cv-trow"><span>${r[0]}</span><span>- ${money(r[1])}</span></div>`).join('')}
+                <div class="cv-grand"><span class="t">${grandLabel}</span><span class="a">${money(total())}</span></div>
+                ${withNet && rets.length ? `<div class="cv-net"><span>Neto a recibir</span><span>${money(neto())}</span></div>` : ''}
+                ${words ? cvWords() : ''}
+            </div>`;
+        }
+        /* Parte inferior: contacto · contenido central · firma(s). sign = array de HTML */
+        function cvBottom(o) {
+            const E = INVOICE.empresa;
+            return `<div class="cv-bottom">
+                <div><div class="cv-bt">Contacto</div><div class="cv-btx">${E.dir}<br>${E.ciudad}</div><div class="cv-btx sp">${E.tel}<br>${E.email}<br>${E.web}</div></div>
+                <div>${o.mid}</div>
+                <div class="cv-signs">${o.sign.map(s => `<div class="cv-sg">${s}</div>`).join('')}</div>
+            </div>${o.extra || ''}`;
+        }
+        const cvThanks = (a, b) => `<div class="cv-thanks"><b>${a}</b>${b}</div>`;
+        const cvFoot = (left, right, pg) => `<div class="cv-foot"><span class="l">${left}</span><span class="r">${right}${pg ? ' · ' + pg : ''}</span></div>`;
+        const cvSheet = (theme, inner) => `<div class="sheet-carta"><div class="cv-main">${inner}</div></div>`;
+
+        /* ===== DIAN: CUFE (SHA-384), QR y estado de validación ===== */
+        // SHA-384 síncrono con BigInt (las constantes se derivan de primos; no depende de crypto.subtle ni de file://)
+        const sha384 = (() => {
+            const M = (1n << 64n) - 1n;
+            const primes = [];
+            for (let n = 2; primes.length < 80; n++) if (primes.every(p => n % p)) primes.push(n);
+            const iroot = (x, k) => { let lo = 0n, hi = 1n; while (hi ** k <= x) hi <<= 1n; while (lo + 1n < hi) { const mid = (lo + hi) >> 1n; if (mid ** k <= x) lo = mid; else hi = mid; } return lo; };
+            const K = primes.map(p => iroot(BigInt(p) << 192n, 3n) & M);
+            const H0 = primes.slice(8, 16).map(p => iroot(BigInt(p) << 128n, 2n) & M);
+            const rotr = (x, n) => ((x >> n) | (x << (64n - n))) & M;
+            return str => {
+                const bytes = new TextEncoder().encode(str), len = bytes.length;
+                const total = Math.ceil((len + 17) / 128) * 128;
+                const buf = new Uint8Array(total); buf.set(bytes); buf[len] = 0x80;
+                const bits = BigInt(len) * 8n;
+                for (let i = 0; i < 16; i++) buf[total - 1 - i] = Number((bits >> BigInt(8 * i)) & 0xffn);
+                let H = H0.slice(); const W = new Array(80);
+                for (let off = 0; off < total; off += 128) {
+                    for (let t = 0; t < 16; t++) { let v = 0n; for (let b = 0; b < 8; b++) v = (v << 8n) | BigInt(buf[off + t * 8 + b]); W[t] = v; }
+                    for (let t = 16; t < 80; t++) {
+                        const s0 = rotr(W[t - 15], 1n) ^ rotr(W[t - 15], 8n) ^ (W[t - 15] >> 7n);
+                        const s1 = rotr(W[t - 2], 19n) ^ rotr(W[t - 2], 61n) ^ (W[t - 2] >> 6n);
+                        W[t] = (W[t - 16] + s0 + W[t - 7] + s1) & M;
+                    }
+                    let [a, b, c, d, e, f, g, h] = H;
+                    for (let t = 0; t < 80; t++) {
+                        const S1 = rotr(e, 14n) ^ rotr(e, 18n) ^ rotr(e, 41n);
+                        const ch = (e & f) ^ ((~e & M) & g);
+                        const t1 = (h + S1 + ch + K[t] + W[t]) & M;
+                        const S0 = rotr(a, 28n) ^ rotr(a, 34n) ^ rotr(a, 39n);
+                        const maj = (a & b) ^ (a & c) ^ (b & c);
+                        const t2 = (S0 + maj) & M;
+                        h = g; g = f; f = e; e = (d + t1) & M; d = c; c = b; b = a; a = (t1 + t2) & M;
+                    }
+                    H = [a, b, c, d, e, f, g, h].map((v, i) => (H[i] + v) & M);
+                }
+                return H.slice(0, 6).map(v => v.toString(16).padStart(16, '0')).join('');
+            };
+        })();
+
+        const m2 = n => Number(n).toFixed(2);
+        const ivaRate = () => { const s = subtotal(); return s > 0 ? String(+(INVOICE.iva / s * 100).toFixed(2)).replace('.', ',') : '0'; };
+        const nitSolo = nit => String(nit).replace(/^NIT\s*/i, '').split('-')[0].replace(/\D/g, '');   // NIT sin DV ni puntos
+        const clienteDoc = () => { const C = INVOICE.cliente; return `${C.tipoDoc} ${C.doc}` + (C.consumidor ? ' · Consumidor final' : ''); };
+
+        /* CUFE = SHA-384( NumFac + FecFac + HorFac + ValFac + 01 + ValIVA + 04 + ValINC + 03 + ValICA + ValTot + NitOFE + NumAdq + ClTec + TipoAmb ) */
+        function cufeCalc() {
+            const I = INVOICE, D = I.dian, R = D.resolucion;
+            const cadena = [I.numero, D.fechaISO, D.horaISO, m2(subtotal()), '01', m2(I.iva), '04', m2(0), '03', m2(0), m2(total()), nitSolo(I.empresa.nit), I.cliente.doc, R.claveTecnica, D.ambiente].join('');
+            return sha384(cadena);
+        }
+        function qrTexto(cufe) {
+            const I = INVOICE, D = I.dian;
+            const url = (D.ambiente === 1 ? 'https://catalogo-vpfe.dian.gov.co' : 'https://catalogo-vpfe-hab.dian.gov.co') + '/document/searchqr?documentkey=' + cufe;
+            if (QR_MODO === 'url') return url;
+            return ['NumFac: ' + I.numero, 'FecFac: ' + D.fechaISO, 'HorFac: ' + D.horaISO, 'NitFac: ' + nitSolo(I.empresa.nit), 'DocAdq: ' + I.cliente.doc,
+                'ValFac: ' + m2(subtotal()), 'ValIva: ' + m2(I.iva), 'ValOtroIm: ' + m2(0), 'ValTolFac: ' + m2(total()), 'CUFE: ' + cufe, 'QRCode: ' + url].join('\n');
+        }
+        function qrSvg(texto) {
+            try {
+                const qr = qrcode(0, 'L'); qr.addData(texto); qr.make();
+                return qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+            } catch (e) { return '<div class="cv-qr-off">QR no disponible (sin conexión a la librería)</div>'; }
+        }
+        function dianEstado() {
+            const v = INVOICE.dian.validacion;
+            switch (currentStatus) {
+                case 'validada':  return { icon: 'fa-solid fa-shield-halved', t: 'Validada por la DIAN', s: 'Fecha de validación ' + v };
+                case 'rechazada': return { icon: 'fa-solid fa-circle-xmark', t: 'Rechazada por la DIAN', s: 'Debe corregirse y reenviarse' };
+                case 'cancelada': return { icon: 'fa-solid fa-ban', t: 'Documento cancelado', s: 'Anulado mediante nota crédito' };
+                default:          return { icon: 'fa-solid fa-hourglass-half', t: 'Enviada a la DIAN', s: 'Pendiente de validación' };
+            }
+        }
+
+        /* ===== Paginación real tamaño carta (816 x 1056 px = 8.5 x 11 in a 96 dpi) ===== */
+        const CV_PAGE_H = 1056, CV_BAR_H = 0, CV_TOP = 40, CV_SAFE = 14;
+        const cvChead = t => `<div class="cv-chead"><b>${INVOICE.empresa.nombre}</b><span>${t}</span></div>`;
+        function cvMeasureEl() {
+            let m = document.getElementById('cv-measure');
+            if (!m) { m = document.createElement('div'); m.id = 'cv-measure'; m.setAttribute('aria-hidden', 'true'); document.body.appendChild(m); }
+            return m;
+        }
+        /* o: { title, head, side, sideC, cols, rows[], totals, bottom, footL, footR }
+           Reparte las filas en páginas; la barra lateral va completa en la 1.ª y reducida (sideC) en las siguientes; totales + parte inferior siempre completos. */
+        function cvDoc(o) {
+            const M = cvMeasureEl();
+            const meas = html => { M.innerHTML = `<div class="sheet-carta" style="height:auto"><div class="cv-main" style="flex:none;padding:0 48px">${html}</div></div>`; return M.querySelector('.cv-main').offsetHeight; };
+            const chead = cvChead(o.title);
+            const hHead = meas(o.head), hCh = meas(chead);
+            const hBase = meas(cvBody('', '')), hSide1 = meas(cvBody(o.side, '')), hSideC = meas(cvBody(o.sideC, ''));
+            const hTh = meas(cvBody('', cvTable(o.cols, ''))) - hBase;
+            const hTotals = meas(cvBody('', o.totals)) - hBase, hBottom = meas(o.bottom);
+            const hFoot = meas(cvFoot(o.footL, o.footR, 'Página 1 de 1'));
+            M.innerHTML = `<div class="sheet-carta" style="height:auto"><div class="cv-main" style="flex:none;padding:0 48px">${cvBody('', cvTable(o.cols, o.rows.join('')))}</div></div>`;
+            const rh = [...M.querySelectorAll('tbody tr')].map(t => t.offsetHeight);
+            M.innerHTML = '';
+            const cap = CV_PAGE_H - CV_BAR_H - CV_TOP - hFoot - CV_SAFE, n = o.rows.length, pages = [];
+            const bodyH = (S, used, tail) => Math.max(S, hBase + hTh + used + (tail ? hTotals : 0));
+            let i = 0, first = true;
+            for (;;) {
+                const top = first ? hHead : hCh, S = first ? hSide1 : hSideC;
+                const avail = cap - top - hBase - hTh;
+                let used = 0; const a = i;
+                while (i < n && used + rh[i] <= avail) { used += rh[i]; i++; }
+                if (i === a && i < n) { used += rh[i]; i++; }              // al menos una fila por página
+                if (i >= n && top + bodyH(S, used, true) + hBottom <= cap) { pages.push({ first, a, b: i, tail: true }); break; }
+                pages.push({ first, a, b: i, tail: false });
+                if (i >= n) {
+                    const prev = pages[pages.length - 1];
+                    let k = 0, h = 0;                                          // mover hasta 2 filas de la hoja anterior junto a los totales
+                    while (k < 2 && prev.b - prev.a - k > 1 && hCh + bodyH(hSideC, h + rh[prev.b - k - 1], true) + hBottom <= cap) { h += rh[prev.b - k - 1]; k++; }
+                    if (k) { prev.b -= k; pages.push({ first: false, a: prev.b, b: i, tail: true }); }
+                    else pages.push({ first: false, a: i, b: i, tail: true, noTable: true });
+                    break;
+                }
+                first = false;
+            }
+            const total = pages.length;
+            return '<div class="cv-pages">' + pages.map((p, k) => cvSheet(null,
+                (p.first ? o.head : chead) +
+                cvBody(p.first ? o.side : o.sideC,
+                    (p.noTable ? '' : cvTable(o.cols, o.rows.slice(p.a, p.b).join(''))) + (p.tail ? o.totals : '')) +
+                (p.tail ? o.bottom : '') +
+                cvFoot(o.footL, o.footR, total > 1 ? `Página ${k + 1} de ${total}` : '')
+            )).join('') + '</div>';
+        }
+        const cvFootL = () => `${INVOICE.empresa.razon} · ${INVOICE.empresa.nit}`;
+        const cvBigSide = (label, val) => `<div class="cv-sl" style="margin-top:0">${label} :</div><div class="cv-sbig">${val}</div>`;
+
+        /* ===== Factura electrónica de venta (carta) ===== */
+        function cartaHTML() {
+            const I = INVOICE, E = I.empresa, C = I.cliente, D = I.dian, R = D.resolucion;
+            const cufe = cufeCalc(), est = dianEstado(), credito = I.formaPago === 'Crédito';
+            const habil = D.ambiente === 2;
+            const head = cvHero('Factura', 'Electrónica de venta · N.º ' + I.numero) +
+                cvParties('Facturar a:', C, true, [`${E.nit} · ${E.regimen}`, `Resp. fiscales ${E.responsabilidades} · CIIU ${E.ciiu}`]);
+            const side = cvSide([
+                { t: 'Forma de pago', rows: [['Forma', I.formaPago], ['Medio', I.medio], ['Vencimiento', credito ? I.vence : ''], ['Moneda', 'COP · Peso colombiano']] },
+                { t: 'Detalles de la factura', rows: [['Factura N.º', I.numero], ['Fecha', FECHA_LARGA], ['Hora', `${D.horaISO.slice(0, 8)} (UTC-5)`]],
+                  html: `<div class="cv-sl">Estado :</div><div style="margin-top:3px">${cvChip()}</div>` },
+                { html: cvBigSide('Total a pagar', 'COP ' + money(total())) }
+            ]);
+            const sideC = cvSide([{ t: 'Detalles de la factura', rows: [['Factura N.º', I.numero], ['Fecha', FECHA_CORTA]] }]);
+            const dian = `<div class="cv-dian">
+                    <div class="cv-qr">${qrSvg(qrTexto(cufe))}</div>
+                    <div style="min-width:0;flex:1">
+                        <div class="cv-dhead"><div class="cv-bt">CUFE · Código Único de Factura Electrónica</div>
+                            <div class="cv-seal"><div><b>${est.t}</b><span>${est.s}</span></div><i class="${est.icon}"></i></div></div>
+                        <div class="cv-cufe">${cufe}</div>
+                        <div class="cv-fine" style="margin-top:0">
+                            Generación: ${D.fechaISO} ${D.horaISO} · Autorización de numeración DIAN N.º ${R.numero} del ${R.fecha}, prefijo ${R.prefijo}, del ${R.desde.toLocaleString('es-CO')} al ${R.hasta.toLocaleString('es-CO')}, vigente hasta ${R.vigHasta}.<br>
+                            Factura electrónica generada por el software ${D.software.nombre} · ${D.software.fabricante}, NIT ${D.software.nit}. Verifique su validez escaneando el QR o en catalogo-vpfe.dian.gov.co.
+                            ${habil ? '<br><b>Documento generado en ambiente de habilitación (pruebas): sin validez tributaria.</b>' : ''}
+                        </div>
+                    </div>
+                </div>`;
+            const bottom = cvBottom({
+                mid: `<div class="cv-bt">Términos y condiciones</div><div class="cv-btx">Esta factura de venta se asimila en todos sus efectos legales a una letra de cambio (Art. 774 del Código de Comercio). Conserve este documento como soporte de su compra${credito ? '; el pago debe realizarse a más tardar el ' + I.vence : ''}.</div>` + cvThanks('Gracias por su compra', 'Estamos para servirle'),
+                sign: [`<b>${E.razon}</b>Firma autorizada`], extra: dian });
+            return cvDoc({ title: 'Factura electrónica de venta N.º ' + I.numero, head, side, sideC, cols: COLS_FACTURA, rows: cvRowList({ prices: true }),
+                totals: cvTotals('Total factura', true, true, true), bottom,
+                footL: cvFootL(), footR: 'Representación gráfica de la factura electrónica de venta' });
+        }
+
+        /* ===== Orden de entrega (carta) ===== */
+        function entregaCartaHTML() {
+            const I = INVOICE, E = I.empresa, P = showPrices;
+            const unidades = I.items.reduce((a, i) => a + i.cant, 0);
+            const totals = P ? cvTotals('Total', false, false, false, false) : `<div class="cv-tot">
+                <div class="cv-trow"><span>Ítems</span><span>${I.items.length}</span></div>
+                <div class="cv-grand"><span class="t">Unidades a entregar</span><span class="a">${unidades}</span></div>
+            </div>`;
+            const head = cvHero('Orden de entrega', 'N.º OE-' + docNum() + ' · Ref. factura ' + I.numero) +
+                cvParties('Entregar a:', I.cliente, false, [`${E.nit} · ${E.regimen}`]);
+            const side = cvSide([
+                { t: 'Dirección de entrega', html: '<div class="cv-line"></div><div class="cv-line"></div>' },
+                { t: 'Fecha de entrega', html: '<div class="cv-line"></div><div class="cv-sub">día / mes / año</div>' },
+                { t: 'Detalles de la orden', rows: [['Orden N.º', 'OE-' + docNum()], ['Fecha', FECHA_LARGA], ['Ref. factura', I.numero]] },
+                { html: cvBigSide('Unidades a entregar', unidades) }
+            ]);
+            const sideC = cvSide([{ t: 'Detalles de la orden', rows: [['Orden N.º', 'OE-' + docNum()], ['Fecha', FECHA_CORTA]] }]);
+            const bottom = cvBottom({
+                mid: `<div class="cv-bt">Observaciones</div><div class="cv-line"></div><div class="cv-line"></div><div class="cv-line"></div>` + cvThanks('Gracias por su preferencia', 'Revise la mercancía al recibirla'),
+                sign: ['Entregado por', 'Recibido conforme<br>(nombre, C.C. y firma)'] });
+            return cvDoc({ title: 'Orden de entrega N.º OE-' + docNum(), head, side, sideC, cols: [COL_CHK, ...(P ? COLS_PRICES : COLS_NOPRICE)], rows: cvRowList({ prices: P, check: true }),
+                totals, bottom, footL: cvFootL(), footR: 'Documento de entrega · No válido como factura' });
+        }
+
+        /* ===== Cotización (carta) ===== */
+        function cotizacionCartaHTML() {
+            const I = INVOICE, E = I.empresa;
+            const head = cvHero('Cotización', 'N.º COT-' + docNum() + ' · Válida por 15 días') +
+                cvParties('Preparada para:', I.cliente, true, [`${E.nit} · ${E.regimen}`]);
+            const side = cvSide([
+                { t: 'Vigencia', rows: [['Válida por', '15 días'], ['Hasta', '12 de octubre de 2026']] },
+                { t: 'Detalles de la cotización', rows: [['Cotización N.º', 'COT-' + docNum()], ['Fecha', FECHA_LARGA], ['Hora', I.hora]] },
+                { html: cvBigSide('Total cotizado', 'COP ' + money(total())) }
+            ]);
+            const sideC = cvSide([{ t: 'Detalles de la cotización', rows: [['Cotización N.º', 'COT-' + docNum()], ['Fecha', FECHA_CORTA]] }]);
+            const bottom = cvBottom({
+                mid: `<div class="cv-bt">Condiciones</div><div class="cv-btx">Precios sujetos a cambio después de la fecha de vigencia. La cotización no compromete la venta.</div>` + cvThanks('Será un gusto atenderle', 'Quedamos atentos a su respuesta'),
+                sign: [`<b>${E.razon}</b>Firma autorizada`] });
+            return cvDoc({ title: 'Cotización N.º COT-' + docNum(), head, side, sideC, cols: COLS_PRICES, rows: cvRowList({ prices: true }),
+                totals: cvTotals('Total cotizado', false, false, false), bottom,
+                footL: cvFootL(), footR: 'Cotización informativa · No constituye factura' });
+        }
+
+        /* ===== Comprobante de pago (carta) ===== */
+        function comprobanteCartaHTML() {
+            const I = INVOICE, E = I.empresa;
+            const head = cvHero('Comprobante de pago', 'N.º CP-' + docNum() + ' · Ref. factura ' + I.numero) +
+                cvParties('Recibido de:', I.cliente, false, [`${E.nit} · ${E.regimen}`]);
+            const side = cvSide([
+                { t: 'Medio de pago', rows: [['Medio', I.medio], ['Origen', I.origen]] },
+                { t: 'Detalles del comprobante', rows: [['Comprobante N.º', 'CP-' + docNum()], ['Fecha', FECHA_LARGA], ['Hora', I.hora], ['Referencia', I.numero + ' (venta registrada)']] },
+                { html: cvBigSide('Valor recibido', 'COP ' + money(total())) }
+            ]);
+            const sideC = cvSide([{ t: 'Detalles del comprobante', rows: [['Comprobante N.º', 'CP-' + docNum()], ['Fecha', FECHA_CORTA]] }]);
+            const bottom = cvBottom({
+                mid: `<div class="cv-bt">Nota</div><div class="cv-btx">Este comprobante certifica el pago recibido. No es una factura electrónica de venta.</div>` + cvThanks('Gracias por su pago', 'Conserve este comprobante'),
+                sign: ['Recibido por', 'Pagado por (firma)'] });
+            return cvDoc({ title: 'Comprobante de pago N.º CP-' + docNum(), head, side, sideC, cols: COLS_PRICES.map((c, i) => i === 0 ? { ...c, t: 'Concepto' } : c), rows: cvRowList({ prices: true }),
+                totals: cvTotals('Valor recibido', false, false, false), bottom,
+                footL: cvFootL(), footR: 'Comprobante de pago · No es una factura electrónica' });
+        }
+
+        function ticketHTML() {
+            const I = INVOICE, E = I.empresa;
+            const rows = I.items.map(i => `<div class="b">${i.desc}</div><div class="f"><span>${i.cant} x ${money(i.unit)}</span><span>${money(i.cant * i.unit)}</span></div>`).join('');
+            return `<div class="sheet-ticket ${ticketCls()}">
+                <div class="c b" style="font-size:16px">${E.nombre}</div>
+                <div class="c">${E.web}<br>${E.nit}<br>${E.dir}<br>${E.tel}</div>
+                <div class="line"></div>
+                <div class="c b">FACTURA DE VENTA No. ${I.numero}</div>
+                <div class="f"><span>Fecha:</span><span>27/09/2026 ${I.hora}</span></div>
+                <div class="f"><span>Cliente:</span><span>${I.cliente.nombre}</span></div>
+                <div class="f"><span>Pago:</span><span>${I.medio}</span></div>
+                <div class="line"></div>
+                ${rows}
+                <div class="line"></div>
+                <div class="f"><span>Subtotal</span><span>${money(subtotal())}</span></div>
+                <div class="f"><span>IVA</span><span>${money(I.iva)}</span></div>
+                <div class="f"><span>Retefuente</span><span>${money(I.retefuente)}</span></div>
+                <div class="f"><span>ReteIVA</span><span>${money(I.reteiva)}</span></div>
+                <div class="f"><span>ReteICA</span><span>${money(I.reteica)}</span></div>
+                <div class="line"></div>
+                <div class="f big"><span>TOTAL</span><span>${money(total())}</span></div>
+                <div class="f"><span>Neto recibido</span><span>${money(neto())}</span></div>
+                <div class="line"></div>
+                <div class="c">¡Gracias por su compra!</div>
+            </div>`;
+        }
+
+        let currentFormat = 'carta';
+        let currentDoc = 'factura';   // 'factura' | 'entrega'
+        let showPrices = true;
+        let ticketWidth = 80;
+        try { ticketWidth = localStorage.getItem('sactec_ticket_w') === '58' ? 58 : 80; } catch (e) {}
+        const ticketCls = () => ticketWidth === 58 ? 'w58' : '';
+
+        function setTicketWidth(w) {
+            ticketWidth = w;
+            try { localStorage.setItem('sactec_ticket_w', String(w)); } catch (e) {}
+            showFormat('ticket');
+        }
+
+        const DOC_META = {
+            factura: { title: () => `Factura #${INVOICE.numero}`, icon: 'fa-regular fa-file-lines' },
+            entrega: { title: () => `Orden de entrega #OE-${INVOICE.numero.replace(/\D/g, '')}`, icon: 'fa-solid fa-truck-fast' },
+            comprobante: { title: () => `Comprobante de pago #CP-${INVOICE.numero.replace(/\D/g, '')}`, icon: 'fa-solid fa-receipt' },
+            cotizacion: { title: () => `Cotización #COT-${INVOICE.numero.replace(/\D/g, '')}`, icon: 'fa-solid fa-file-signature' }
+        };
+
+        /* ----- Orden de entrega ----- */
+        function entregaTicketHTML() {
+            const I = INVOICE, E = I.empresa, n = 'OE-' + I.numero.replace(/\D/g, '');
+            const P = showPrices;
+            const rows = I.items.map(i => P
+                ? `<div class="b">${i.desc}</div><div class="f"><span>${i.cant} x ${money(i.unit)}</span><span>${money(i.cant * i.unit)}</span></div>`
+                : `<div class="f"><span class="b">${i.desc}</span><span class="b">x${i.cant}</span></div>`).join('');
+            const totals = P ? `<div class="line"></div>
+                <div class="f"><span>Subtotal</span><span>${money(subtotal())}</span></div>
+                <div class="f"><span>IVA</span><span>${money(I.iva)}</span></div>
+                <div class="f big"><span>TOTAL</span><span>${money(total())}</span></div>` : '';
+            return `<div class="sheet-ticket ${ticketCls()}">
+                <div class="c b" style="font-size:16px">${E.nombre}</div>
+                <div class="c">${E.web}<br>${E.nit}<br>${E.tel}</div>
+                <div class="line"></div>
+                <div class="c b"><i class="fa-solid fa-truck-fast"></i> ORDEN DE ENTREGA No. ${n}</div>
+                <div class="f"><span>Fecha:</span><span>27/09/2026 ${I.hora}</span></div>
+                <div class="f"><span>Ref. factura:</span><span>${I.numero}</span></div>
+                <div class="f"><span>Cliente:</span><span>${I.cliente.nombre}</span></div>
+                <div class="line"></div>
+                ${rows}
+                ${totals}
+                <div class="line"></div>
+                <div style="margin-top:26px;border-top:1px solid #000;padding-top:3px" class="c">Recibido por (nombre y firma)</div>
+                <div style="margin-top:22px;border-top:1px solid #000;padding-top:3px" class="c">C.C.</div>
+                <div class="line"></div>
+                <div class="c">No válido como factura</div>
+            </div>`;
+        }
+
+        function docHTML() {
+            if (currentDoc === 'entrega') return currentFormat === 'carta' ? entregaCartaHTML() : entregaTicketHTML();
+            if (currentDoc === 'comprobante') return currentFormat === 'carta' ? comprobanteCartaHTML() : comprobanteTicketHTML();
+            if (currentDoc === 'cotizacion') return currentFormat === 'carta' ? cotizacionCartaHTML() : cotizacionTicketHTML();
+            return currentFormat === 'carta' ? cartaHTML() : ticketHTML();
+        }
+
+        function showFormat(fmt) {
+            currentFormat = fmt;
+            const inner = document.getElementById('preview-inner');
+            inner.style.transform = 'none';
+            inner.innerHTML = docHTML();
+            const on = 'bg-white text-[#0b1b2d]', off = 'text-slate-300';
+            document.getElementById('tab-carta').className = 'px-3.5 py-1.5 rounded-full transition ' + (fmt === 'carta' ? on : off);
+            document.getElementById('tab-ticket').className = 'px-3.5 py-1.5 rounded-full transition ' + (fmt === 'ticket' ? on : off);
+            const ts = document.getElementById('ticket-size');
+            ts.classList.toggle('hidden', fmt !== 'ticket');
+            ts.classList.toggle('flex', fmt === 'ticket');
+            document.getElementById('w-80').className = 'px-3.5 py-1 rounded-full transition ' + (ticketWidth === 80 ? on : off);
+            document.getElementById('w-58').className = 'px-3.5 py-1 rounded-full transition ' + (ticketWidth === 58 ? on : off);
+            fitPreview();
+            schedulePdfPrep();
+        }
+
+        function togglePrices(v) { showPrices = v; showFormat(currentFormat); }
+
+        function fitPreview() {
+            const inner = document.getElementById('preview-inner');
+            const wrap = document.getElementById('preview-wrap');
+            const avail = document.getElementById('preview-scroll').clientWidth - 32;
+            const sheet = inner.firstElementChild;
+            if (!sheet) return;
+            const w = sheet.offsetWidth, h = sheet.offsetHeight;   // en carta, sheet = contenedor de páginas
+            const k = Math.min(1, avail / w);
+            inner.style.transform = `scale(${k})`;
+            wrap.style.width = (w * k) + 'px';
+            wrap.style.height = (h * k) + 'px';
+        }
+
+        /* ===== Orden de entrega firmada: subir / ver / reemplazar / quitar ===== */
+        const signedDocs = {};              // por número de factura -> { name, size, type, url, date }  (en memoria; conectar a su backend para guardarlo)
+        const SIGNED_MAX = 10 * 1024 * 1024;
+        const fmtBytes = b => b < 1048576 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+        function renderSigned() {
+            const f = signedDocs[INVOICE.numero];
+            const show = (id, on) => { const e = document.getElementById(id); e.classList.toggle('hidden', !on); e.classList.toggle('flex', on && id === 'signed-file'); };
+            show('signed-empty', !f); show('signed-file', !!f);
+            const chip = document.getElementById('signed-chip');
+            chip.textContent = f ? 'Firmada' : 'Pendiente';
+            chip.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ' + (f ? 'bg-emerald-400/20 text-emerald-300' : 'bg-amber-400/20 text-amber-300');
+            if (!f) return;
+            document.getElementById('signed-name').textContent = f.name;
+            document.getElementById('signed-meta').textContent = fmtBytes(f.size) + ' · ' + f.date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+            document.getElementById('signed-thumb').innerHTML = f.type.startsWith('image/')
+                ? `<img src="${f.url}" alt="" class="w-full h-full object-cover">` : '<i class="fa-regular fa-file-pdf text-base"></i>';
+        }
+        function setSigned(file) {
+            if (!file) return;
+            if (!(file.type === 'application/pdf' || file.type.startsWith('image/'))) { notifyAction('Formato no válido: sube un PDF o una imagen'); return; }
+            if (file.size > SIGNED_MAX) { notifyAction('El archivo supera los 10 MB'); return; }
+            const prev = signedDocs[INVOICE.numero];
+            if (prev) URL.revokeObjectURL(prev.url);
+            signedDocs[INVOICE.numero] = { name: file.name, size: file.size, type: file.type, url: URL.createObjectURL(file), date: new Date() };
+            renderSigned();
+            notifyAction('Orden firmada cargada');
+        }
+        function onSignedPicked(inp) { const f = inp.files && inp.files[0]; inp.value = ''; setSigned(f); }
+        function viewSigned() { const f = signedDocs[INVOICE.numero]; if (f) window.open(f.url, '_blank', 'noopener'); }
+        function removeSigned() {
+            const f = signedDocs[INVOICE.numero];
+            if (!f) return;
+            URL.revokeObjectURL(f.url); delete signedDocs[INVOICE.numero];
+            renderSigned(); notifyAction('Archivo firmado eliminado');
+        }
+        (function () {   // arrastrar y soltar sobre el panel
+            const pn = document.getElementById('signed-panel');
+            ['dragover', 'dragenter'].forEach(ev => pn.addEventListener(ev, e => { e.preventDefault(); pn.classList.add('ring-2', 'ring-white/50'); }));
+            ['dragleave', 'drop'].forEach(ev => pn.addEventListener(ev, e => { e.preventDefault(); pn.classList.remove('ring-2', 'ring-white/50'); }));
+            pn.addEventListener('drop', e => setSigned(e.dataTransfer.files && e.dataTransfer.files[0]));
+        })();
+
+        function openInvoice(doc = 'factura', fmt = 'carta') {
+            currentDoc = doc;
+            const m = DOC_META[doc];
+            document.getElementById('doc-title').textContent = m.title();
+            document.getElementById('doc-icon').className = m.icon + ' text-slate-300';
+            const isEntrega = doc === 'entrega';
+            const tg = document.getElementById('price-toggle');
+            tg.classList.toggle('hidden', !isEntrega);
+            tg.classList.toggle('flex', isEntrega);
+            document.getElementById('btn-xml').classList.toggle('hidden', doc !== 'factura');
+            const sp = document.getElementById('signed-panel');
+            sp.classList.toggle('hidden', !isEntrega);
+            sp.classList.toggle('flex', isEntrega);
+            if (isEntrega) renderSigned();
+            document.getElementById('invoice-modal').classList.remove('hidden');
+            showFormat(fmt);
+        }
+        function closeInvoice() { document.getElementById('invoice-modal').classList.add('hidden'); }
+
+        function printInvoice() {
+            const root = document.getElementById('print-root');
+            root.innerHTML = docHTML();
+            document.querySelectorAll('#page-style').forEach(e => e.remove());
+            const st = document.createElement('style');
+            st.id = 'page-style';
+            st.textContent = currentFormat === 'carta'
+                ? '@page { size: letter portrait; margin: 0; }'
+                : `@page { size: ${ticketWidth}mm auto; margin: 0; }`;
+            document.head.appendChild(st);
+            const cleanup = () => { st.remove(); root.innerHTML = ''; window.removeEventListener('afterprint', cleanup); };
+            window.addEventListener('afterprint', cleanup);
+            window.print();
+        }
+
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {   // re-paginar cuando Poppins ya cargó
+            if (!document.getElementById('invoice-modal').classList.contains('hidden')) showFormat(currentFormat);
+        });
+        window.addEventListener('resize', () => {
+            if (!document.getElementById('invoice-modal').classList.contains('hidden')) fitPreview();
+        });
+
+
+        /* ===== Cotización y comprobante de pago ===== */
+        
+
+        function cotizacionTicketHTML() {
+            const I = INVOICE, E = I.empresa;
+            const rows = I.items.map(i => `<div class="b">${i.desc}</div><div class="f"><span>${i.cant} x ${money(i.unit)}</span><span>${money(i.cant * i.unit)}</span></div>`).join('');
+            return `<div class="sheet-ticket ${ticketCls()}">
+                <div class="c b" style="font-size:16px">${E.nombre}</div>
+                <div class="c">${E.web}<br>${E.nit}<br>${E.tel}</div>
+                <div class="line"></div>
+                <div class="c b"><i class="fa-solid fa-file-signature"></i> COTIZACIÓN No. COT-${docNum()}</div>
+                <div class="f"><span>Fecha:</span><span>27/09/2026 ${I.hora}</span></div>
+                <div class="f"><span>Cliente:</span><span>${I.cliente.nombre}</span></div>
+                <div class="f"><span>Vigencia:</span><span>15 días</span></div>
+                <div class="line"></div>
+                ${rows}
+                <div class="line"></div>
+                <div class="f"><span>Subtotal</span><span>${money(subtotal())}</span></div>
+                <div class="f"><span>IVA</span><span>${money(I.iva)}</span></div>
+                <div class="f big"><span>TOTAL</span><span>${money(total())}</span></div>
+                <div class="line"></div>
+                <div class="c">No válido como factura</div>
+            </div>`;
+        }
+
+        function comprobanteTicketHTML() {
+            const I = INVOICE, E = I.empresa;
+            const rows = I.items.map(i => `<div class="b">${i.desc}</div><div class="f"><span>${i.cant} x ${money(i.unit)}</span><span>${money(i.cant * i.unit)}</span></div>`).join('');
+            return `<div class="sheet-ticket ${ticketCls()}">
+                <div class="c b" style="font-size:16px">${E.nombre}</div>
+                <div class="c">${E.web}<br>${E.nit}<br>${E.tel}</div>
+                <div class="line"></div>
+                <div class="c b"><i class="fa-solid fa-receipt"></i> COMPROBANTE DE PAGO No. CP-${docNum()}</div>
+                <div class="f"><span>Fecha:</span><span>27/09/2026 ${I.hora}</span></div>
+                <div class="f"><span>Cliente:</span><span>${I.cliente.nombre}</span></div>
+                <div class="f"><span>Ref.:</span><span>#${I.numero}</span></div>
+                <div class="f"><span>Pago:</span><span>${I.medio}</span></div>
+                <div class="line"></div>
+                ${rows}
+                <div class="line"></div>
+                <div class="f"><span>Subtotal</span><span>${money(subtotal())}</span></div>
+                <div class="f"><span>IVA</span><span>${money(I.iva)}</span></div>
+                <div class="f big"><span>RECIBIDO</span><span>${money(total())}</span></div>
+                <div class="line"></div>
+                <div class="c">No es factura electrónica</div>
+            </div>`;
+        }
+
+        /* ===== Menú de los 3 puntitos según el estado ===== */
+        const MENU_ITEMS = {
+            ver:         { action: 'Ver Factura',                label: 'Ver factura',                sub: 'Carta, ticket, PDF y XML', icon: 'fa-regular fa-file-lines',       tint: 'text-slate-500',   bg: 'bg-slate-100' },
+            electronica: { action: 'Generar Factura Electrónica', label: 'Generar factura electrónica', sub: 'Enviar a la DIAN',        icon: 'fa-solid fa-file-invoice',       tint: 'text-indigo-600',  bg: 'bg-indigo-50' },
+            comprobante: { action: 'Comprobante de Pago',        label: 'Comprobante de pago',        sub: 'Carta y ticket',           icon: 'fa-solid fa-receipt',            tint: 'text-teal-600',    bg: 'bg-teal-50' },
+            cotizacion:  { action: 'Generar Cotización',         label: 'Cotización',                 sub: 'Carta y ticket',           icon: 'fa-solid fa-file-signature',     tint: 'text-emerald-600', bg: 'bg-emerald-50' },
+            entrega:     { action: 'Generar Orden de Entrega',   label: 'Orden de entrega',           sub: 'Carta y ticket',           icon: 'fa-solid fa-truck-fast',         tint: 'text-blue-600',    bg: 'bg-blue-50' },
+            notacredito: { action: 'Ver Nota Crédito',           label: 'Nota crédito',               sub: '',                         icon: 'fa-solid fa-file-circle-minus',  tint: 'text-amber-600',   bg: 'bg-amber-50' },
+            anular:      { action: 'Anular Factura',             label: 'Solicitar anulación',        sub: '',                         icon: 'fa-solid fa-ban',                tint: 'text-red-500',     bg: 'bg-red-50', danger: true }
+        };
+        const FULL_MENU = [{ items: ['ver'] }, { title: 'Documentos relacionados', items: ['entrega', 'cotizacion', 'notacredito'] }, { items: ['anular'] }];
+        const QUOTE_MENU = [{ items: ['cotizacion'] }];
+        const MENU_BY_STATUS = {
+            cotizacion: QUOTE_MENU,     // Cotización y Pendiente comparten la misma función
+            pendiente:  QUOTE_MENU,
+            cerrada:    [{ items: ['electronica'] }, { items: ['comprobante'] }],
+            facturada:  FULL_MENU,      // ya es factura electrónica: sin comprobante de pago
+            validada:   FULL_MENU,
+            cancelada:  [{ items: ['ver'] }],
+            rechazada:  [{ items: ['ver'] }]
+        };
+
+
+        /* ===== Botón principal de la tarjeta según el estado ===== */
+        const QUOTE_PRIMARY = { action: 'Generar Cotización', label: 'VER COTIZACIÓN' };
+        const PRIMARY_BY_STATUS = {
+            cotizacion: QUOTE_PRIMARY,   // igual que Pendiente
+            pendiente:  QUOTE_PRIMARY,
+            cerrada:    { action: 'Comprobante de Pago', label: 'VER COMPROBANTE' }
+        };
+        const PRIMARY_DEFAULT = { action: 'Ver Factura', label: 'VER FACTURA' };
+        const primaryConfig = () => PRIMARY_BY_STATUS[currentStatus] || PRIMARY_DEFAULT;
+        function primaryAction() { selectOption(primaryConfig().action); }
+        function renderPrimary() { document.getElementById('primary-label').textContent = primaryConfig().label; }
+
+        function renderMenu() {
+            const groups = MENU_BY_STATUS[currentStatus] || FULL_MENU;
+            const divider = '<div class="mx-3 my-1 border-t border-slate-100"></div>';
+            document.getElementById('dropdown-menu').innerHTML = groups.map(g =>
+                (g.title ? `<p class="px-4 pt-2 pb-1 text-[10px] font-bold tracking-widest text-slate-400 uppercase">${g.title}</p>` : '') +
+                g.items.map(k => {
+                    const m = MENU_ITEMS[k];
+                    return `<button role="menuitem" onclick="selectOption('${m.action}')" class="w-full px-3 py-2 text-left text-[13px] ${m.danger ? 'font-bold text-red-600 hover:bg-red-50 active:bg-red-100' : 'font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100'} flex items-center gap-3 transition">
+                        <span class="w-7 h-7 rounded-lg ${m.bg} ${m.tint} flex items-center justify-center text-xs flex-shrink-0"><i class="${m.icon}"></i></span>
+                        <span class="flex flex-col leading-tight"><span>${m.label}</span>${m.sub ? `<span class="text-[10px] font-medium text-slate-400">${m.sub}</span>` : ''}</span>
+                    </button>`;
+                }).join('')
+            ).join(divider);
+        }
+
+        const INVOICE_ACTIONS = { 'Ver Factura': 'factura', 'Generar Orden de Entrega': 'entrega', 'Comprobante de Pago': 'comprobante', 'Generar Cotización': 'cotizacion' };
+
+        /* ===== Compartir = PDF (alta resolución, ~384 ppp) =====
+           El PDF se prepara en segundo plano al abrir/cambiar el documento, para que al tocar Compartir
+           se envíe de inmediato (los navegadores solo permiten abrir "compartir" justo después del toque). */
+        const PDF_LIBS = { html2canvas: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', jspdf: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js' };
+        let pdfCache = { key: null, blob: null, promise: null };
+        let pdfPrepTimer = null;
+        const pdfKey = () => [currentDoc, currentFormat, ticketWidth, showPrices, currentStatus, INVOICE.numero].join('|');
+        function ensureLib(name) {
+            const ok = () => name === 'jspdf' ? !!(window.jspdf && window.jspdf.jsPDF) : !!window[name];
+            if (ok()) return Promise.resolve();
+            return new Promise((res, rej) => {
+                const sc = document.createElement('script');
+                sc.src = PDF_LIBS[name];
+                sc.onload = () => ok() ? res() : rej(new Error('Librería PDF no disponible'));
+                sc.onerror = () => rej(new Error('No se pudo cargar la librería de PDF (revisa la conexión)'));
+                document.head.appendChild(sc);
+            });
+        }
+        async function buildPdfBlob(html, fmt, tw) {
+            await Promise.all([ensureLib('html2canvas'), ensureLib('jspdf')]);
+            const stage = document.createElement('div');
+            stage.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff;';
+            stage.innerHTML = html;
+            document.body.appendChild(stage);
+            try {
+                if (document.fonts && document.fonts.ready) await document.fonts.ready;
+                const { jsPDF } = window.jspdf;
+                // Alta resolución (~380 ppp en carta): escala 4, limitada para no superar el máximo de canvas del móvil (~16 Mpx)
+                const MAX_PX = 14e6;
+                const grab = el => {
+                    const k = Math.max(1, Math.min(4, Math.sqrt(MAX_PX / (el.offsetWidth * el.offsetHeight))));
+                    return html2canvas(el, { scale: k, backgroundColor: '#ffffff', useCORS: true, logging: false,
+                        onclone: d => d.querySelectorAll('.sheet-carta').forEach(e => e.style.boxShadow = 'none') });
+                };
+                let pdf;
+                if (fmt === 'carta') {
+                    const pages = stage.querySelectorAll('.sheet-carta');
+                    pdf = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait', compress: true });
+                    for (let i = 0; i < pages.length; i++) {
+                        const c = await grab(pages[i]);
+                        if (i > 0) pdf.addPage('letter', 'portrait');
+                        pdf.addImage(c, 'PNG', 0, 0, 612, 792, undefined, 'FAST');
+                    }
+                } else {
+                    const c = await grab(stage.querySelector('.sheet-ticket'));
+                    const wMm = tw === 58 ? 58 : 80;
+                    const hMm = wMm * c.height / c.width;
+                    pdf = new jsPDF({ unit: 'mm', format: [wMm, hMm], orientation: 'portrait', compress: true });
+                    pdf.addImage(c, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST');
+                }
+                return pdf.output('blob');
+            } finally { stage.remove(); }
+        }
+        function getPdf() {
+            const key = pdfKey();
+            if (pdfCache.key !== key) {
+                const entry = pdfCache = { key, blob: null, promise: null };
+                entry.promise = buildPdfBlob(docHTML(), currentFormat, ticketWidth)
+                    .then(b => { entry.blob = b; return b; })
+                    .catch(e => { if (pdfCache === entry) pdfCache = { key: null, blob: null, promise: null }; throw e; });
+            }
+            return pdfCache.promise;
+        }
+        function schedulePdfPrep() {
+            clearTimeout(pdfPrepTimer);
+            pdfPrepTimer = setTimeout(() => {
+                if (!document.getElementById('invoice-modal').classList.contains('hidden')) getPdf().catch(e => console.warn('PDF:', e));
+            }, 500);
+        }
+        function downloadFile(file) {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(file); a.download = file.name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        }
+        async function shareInvoice() {
+            const title = DOC_META[currentDoc].title();
+            let blob, waited = false;
+            if (pdfCache.key === pdfKey() && pdfCache.blob) blob = pdfCache.blob;   // ya listo: se comparte dentro del toque
+            else {
+                waited = true;
+                notifyAction('Generando PDF...');
+                try { blob = await getPdf(); }
+                catch (e) { console.error(e); notifyAction('No se pudo generar el PDF: ' + (e && e.message ? e.message : 'error')); return; }
+            }
+            const name = (title.replace(/[^\w\-#. áéíóúñÁÉÍÓÚÑ]/g, '').trim().replace(/\s+/g, '_') || 'documento') + '.pdf';
+            const file = new File([blob], name, { type: 'application/pdf' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try { await navigator.share({ files: [file], title }); return; }
+                catch (err) {
+                    if (err && err.name === 'AbortError') return;
+                    if (err && err.name === 'NotAllowedError' && waited) { notifyAction('PDF listo: toca Compartir otra vez'); return; }
+                    console.warn('share:', err);
+                }
+            }
+            downloadFile(file);
+            notifyAction('PDF descargado (este navegador no permite compartir archivos)');
+        }
+        function copyShare(text) {
+            const done = () => notifyAction('Resumen copiado para compartir');
+            const fallback = () => { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) { notifyAction('No se pudo compartir'); } t.remove(); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+        }
+        function savePdf() {
+            notifyAction('Elige "Guardar como PDF" como destino en el diálogo');
+            setTimeout(printInvoice, 600);
+        }
+
+
+        /* ===== Estados ===== */
+        const STATUSES = {
+            cotizacion: { label: 'Cotización', plural: 'Cotizaciones', bg: '#ede9fe', fg: '#6d28d9', icon: 'fa-file-signature' },
+            pendiente:  { label: 'Pendiente',  plural: 'Pendientes',   bg: '#fef3c7', fg: '#b45309', icon: 'fa-clock' },
+            cerrada:    { label: 'Cerrada',    plural: 'Cerradas',     bg: '#e2e8f0', fg: '#475569', icon: 'fa-lock' },
+            facturada:  { label: 'Facturada',  plural: 'Facturadas',   bg: '#d1fae5', fg: '#047857', icon: 'fa-file-invoice-dollar' },
+            validada:   { label: 'Validada',   plural: 'Validadas',    bg: '#e0ecff', fg: '#2f6feb', icon: 'fa-circle-check' },
+            cancelada:  { label: 'Cancelada',  plural: 'Canceladas',   bg: '#ffedd5', fg: '#c2410c', icon: 'fa-ban' },
+            rechazada:  { label: 'Rechazada',  plural: 'Rechazadas',   bg: '#fee2e2', fg: '#dc2626', icon: 'fa-circle-xmark' }
+        };
+        let currentStatus = 'validada';
+        let currentFilter = 'todas';
+
+        function renderBadge() {
+            const st = STATUSES[currentStatus];
+            const b = document.getElementById('status-badge');
+            b.style.background = st.bg; b.style.color = st.fg;
+            b.innerHTML = `<span class="w-2 h-2 rounded-full" style="background:${st.fg}"></span> ${st.label} <i class="fa-solid fa-chevron-down text-[9px] opacity-70"></i>`;
+        }
+
+        function renderStatusMenu() {
+            document.getElementById('status-menu').innerHTML =
+                '<p class="px-4 pt-2 pb-1 text-[10px] font-bold tracking-widest text-slate-400 uppercase">Cambiar estado</p>' +
+                Object.entries(STATUSES).map(([k, st]) => `
+                    <button role="menuitem" onclick="setStatus('${k}')" class="w-full px-3 py-2 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between">
+                        <span class="flex items-center gap-3">
+                            <span class="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style="background:${st.bg};color:${st.fg}"><i class="fa-solid ${st.icon}"></i></span>
+                            ${st.label}
+                        </span>
+                        ${k === currentStatus ? '<i class="fa-solid fa-check text-emerald-500 text-xs"></i>' : ''}
+                    </button>`).join('');
+        }
+
+        function toggleStatusMenu() {
+            document.getElementById('dropdown-menu').classList.add('hidden');
+            renderStatusMenu();
+            document.getElementById('status-menu').classList.toggle('hidden');
+        }
+
+        function setStatus(k) {
+            currentStatus = k;
+            document.getElementById('status-menu').classList.add('hidden');
+            if (currentFilter !== 'todas') currentFilter = k;   // el filtro sigue a la tarjeta
+            renderAll();
+            notifyAction(`Estado: ${STATUSES[k].label}`);
+        }
+
+        function setFilter(f) { currentFilter = f; renderAll(); }
+
+        function renderChips() {
+            const chip = (key, text, dot) => {
+                const on = currentFilter === key;
+                return `<button onclick="setFilter('${key}')" class="px-4 py-1.5 rounded-full whitespace-nowrap shadow-sm flex items-center gap-1.5 ${on ? 'bg-[#0b1b2d] text-white font-semibold' : 'border border-slate-200 bg-white text-slate-700 font-medium'}">${dot ? `<span class="w-1.5 h-1.5 rounded-full" style="background:${dot}"></span>` : ''}${text}</button>`;
+            };
+            document.getElementById('filter-chips').innerHTML =
+                chip('todas', 'Todas', '') +
+                Object.entries(STATUSES).map(([k, st]) => chip(k, st.plural, st.fg)).join('');
+        }
+
+        function renderAll() {
+            renderBadge(); renderChips(); renderMenu(); renderPrimary();
+            const visible = currentFilter === 'todas' || currentFilter === currentStatus;
+            document.getElementById('invoice-card').classList.toggle('hidden', !visible);
+            document.getElementById('empty-state').classList.toggle('hidden', visible);
+        }
+
+        function toggleMenu() {
+            document.getElementById('status-menu').classList.add('hidden');
+            document.getElementById('dropdown-menu').classList.toggle('hidden');
+        }
+
+        function selectOption(action) {
+            const menu = document.getElementById('dropdown-menu');
+            menu.classList.add('hidden');
+            if (action === 'Generar Factura Electrónica') {
+                notifyAction('Generando factura electrónica...');
+                setTimeout(() => setStatus('facturada'), 1100);
+                return;
+            }
+            if (INVOICE_ACTIONS[action]) {
+                openInvoice(INVOICE_ACTIONS[action], 'carta');
+                return;
+            }
+            notifyAction(`Ejecutando: ${action}`);
+        }
+
+        function notifyAction(message) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            toastMessage.textContent = message;
+            toast.classList.remove('opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 2500);
+        }
+
+        window.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('dropdown-menu').classList.add('hidden'); closeInvoice(); document.getElementById('status-menu').classList.add('hidden'); });
+
+        window.addEventListener('click', function(e) {
+            const menu = document.getElementById('dropdown-menu');
+            const menuBtn = document.getElementById('menu-btn');
+            
+            if (menu && menuBtn && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
+                menu.classList.add('hidden');
+            }
+            const sm = document.getElementById('status-menu'), sb = document.getElementById('status-badge');
+            if (sm && sb && !sm.contains(e.target) && !sb.contains(e.target)) sm.classList.add('hidden');
+        });
+            renderAll();
+    </script>
+</body>
+</html>

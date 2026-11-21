@@ -1,14 +1,20 @@
+import { reservationTransitionBlock, lifecycleConflict, cancellationReason, isPolicyV2, newReservationPolicy } from '../reservations/reservation-lifecycle';
 import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
-import { IngredientStatus, Prisma, Weekday } from '@prisma/client';
+import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
+import { CreatePublicQuotationDto } from './dto/create-public-quotation.dto';
+import { QuotationsService } from '../quotations/quotations.service';
+import { IngredientStatus, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -16,9 +22,45 @@ import { ItemOptionsService } from '../item-options/item-options.service';
 import { PushNotificationsService } from '../notifications/push-notifications.service';
 import { isIngredientOperational } from '../ingredients/ingredient-operational';
 import { TaxService } from '../tax/tax.service';
+import {
+  AvailabilityService,
+  RESERVATION_ERRORS,
+  toBookingConflict,
+} from '../availability/availability.service';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
+import {
+  assertNoHiddenPrices,
+  publicItemPrice,
+  toPublicItem,
+} from '../items/item-public-view';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { getFactusMunicipalities } from '../settings/factus-municipalities.catalog';
+
+/** Constant-time token check; legacy rows without a token can never match. */
+export function publicTokenMatches(
+  expected: string | null | undefined,
+  provided: string | null | undefined,
+) {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// A booking-attempt key only replays its own response for this long; afterwards it is no
+// credential at all (no token, no data, no new booking).
+export const PUBLIC_RESERVATION_REPLAY_WINDOW_MS = 15 * 60 * 1000;
+// The only reservation fields a public caller ever receives back. Never key hash/fingerprint.
+const PUBLIC_RESERVATION_RESULT = {
+  id: true,
+  publicToken: true,
+  status: true,
+  date: true,
+  startMinute: true,
+  endMinute: true,
+  createdAt: true,
+  publicRequestFingerprint: true,
+} as const;
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -165,6 +207,10 @@ export class PublicService {
       simpleRegimeSalesEnabled: true,
       simpleRegimeTaxModuleEnabled: false,
     } as FeatureFlagsService,
+    @Optional()
+    private availability: AvailabilityService = new AvailabilityService(prisma),
+    @Optional()
+    private quotationsService?: QuotationsService,
   ) {}
 
   // Single resolver for every public :slug route: current slug or a historical alias in
@@ -280,6 +326,20 @@ export class PublicService {
     if (!this.taxService) {
       throw new BadRequestException('Tax preview is not available');
     }
+    // Without a client unitPrice the preview prices lines with Item.price:
+    // hidden prices and hidden items must never reach it from the public store.
+    const restricted = await this.prisma.item.findMany({
+      where: {
+        id: { in: (dto.cartItems ?? []).map((line) => line.itemId) },
+        businessId: business.id,
+        OR: [{ visibleInCatalog: false }, { publishWithoutPrice: true }],
+      },
+      select: { id: true, visibleInCatalog: true, publishWithoutPrice: true },
+    });
+    if (restricted.some((item) => item.visibleInCatalog === false)) {
+      throw new BadRequestException('Invalid items');
+    }
+    assertNoHiddenPrices(restricted);
     return this.taxService.calculateTaxPreview(business.id, dto);
   }
 
@@ -325,6 +385,55 @@ export class PublicService {
       });
     }
     return { message: 'Order created', orderId: order.publicToken };
+  }
+
+  private publicReservationKeyHash(businessId: string, key: string) {
+    return createHash('sha256').update(`${businessId}:${key}`).digest('hex');
+  }
+
+  private publicReservationFingerprint(dto: CreatePublicReservationDto) {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          endMinute: dto.endMinute ?? null,
+          customerName: dto.customerName.trim(),
+          customerWhatsapp: dto.customerWhatsapp.trim(),
+        }),
+      )
+      .digest('hex');
+  }
+
+  /** Single replay rule for every lookup path (pre-check and post-P2002 re-read). */
+  private resolvePublicReservationReplay(
+    row: { createdAt: Date; publicRequestFingerprint: string | null } & Record<string, any>,
+    fingerprint: string,
+    now = Date.now(),
+  ) {
+    if (row.publicRequestFingerprint !== fingerprint) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        message: 'La clave de idempotencia ya fue utilizada con otro contenido',
+      });
+    }
+    if (now - row.createdAt.getTime() > PUBLIC_RESERVATION_REPLAY_WINDOW_MS) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'IDEMPOTENCY_KEY_EXPIRED',
+        message: 'Este intento de reserva ya no es válido. Iniciá una nueva reserva.',
+      });
+    }
+    return this.publicReservationResult(row);
+  }
+
+  private publicReservationResult(row: Record<string, any>) {
+    const { publicRequestFingerprint: _omit, ...result } = row;
+    return result;
   }
 
   private isPublicOrderIdempotencyConflict(error: unknown) {
@@ -521,175 +630,6 @@ export class PublicService {
     };
   }
 
-  private formatDateOnly(value: Date) {
-    const year = value.getUTCFullYear();
-    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(value.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private formatTime(minutes: number) {
-    const h = Math.floor(minutes / 60)
-      .toString()
-      .padStart(2, '0');
-
-    const m = (minutes % 60).toString().padStart(2, '0');
-
-    return `${h}:${m}`;
-  }
-
-  private getWeekday(date: Date): Weekday {
-    const weekdayMap: Record<number, Weekday> = {
-      0: 'SUN',
-      1: 'MON',
-      2: 'TUE',
-      3: 'WED',
-      4: 'THU',
-      5: 'FRI',
-      6: 'SAT',
-    };
-
-    return weekdayMap[date.getUTCDay()];
-  }
-
-  private async getAvailabilitySlotsForItem(
-    businessId: string,
-    item: { id: string; durationMinutes: number | null },
-    date: Date,
-    hasSpecificWindows: boolean,
-    excludeReservationId?: string,
-  ) {
-    const weekday = this.getWeekday(date);
-
-    const dateKey = [
-      date.getUTCFullYear(),
-      String(date.getUTCMonth() + 1).padStart(2, '0'),
-      String(date.getUTCDate()).padStart(2, '0'),
-    ].join('-');
-
-    const [windows, reservations, blocks] = await Promise.all([
-      this.prisma.serviceScheduleWindow.findMany({
-        where: {
-          businessId,
-          weekday,
-          itemId: hasSpecificWindows ? item.id : null,
-        },
-        orderBy: { startMinute: 'asc' },
-      }),
-      this.prisma.reservation.findMany({
-        where: {
-          businessId,
-          itemId: item.id,
-          date,
-          status: { not: 'CANCELLED' },
-          ...(excludeReservationId
-            ? { id: { not: excludeReservationId } }
-            : {}),
-        },
-        select: {
-          startMinute: true,
-          endMinute: true,
-        },
-      }),
-      this.prisma.serviceScheduleBlock.findMany({
-        where: {
-          businessId,
-          date,
-          OR: [{ itemId: item.id }, { itemId: null }],
-        },
-      }),
-    ]);
-
-    if (windows.length === 0) return [];
-
-    // 1. Windows are already filtered at the database query level based on item-specific priority.
-    const filteredWindows = windows;
-
-    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
-    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
-    for (const w of filteredWindows) {
-      const last = mergedWindows[mergedWindows.length - 1];
-      if (last && last.endMinute >= w.startMinute) {
-        last.endMinute = Math.max(last.endMinute, w.endMinute);
-      } else {
-        mergedWindows.push({
-          startMinute: w.startMinute,
-          endMinute: w.endMinute,
-        });
-      }
-    }
-
-    // Duration of the service in minutes. Drives both the slot length and the
-    // step between consecutive slot offers so the grid never has overlapping
-    // or unreachable windows.
-    //   • 60-min service  → step = 60  → 08:00, 09:00, 10:00 …
-    //   • 120-min service → step = 120 → 08:00, 10:00, 12:00 …
-    const duration = item.durationMinutes ?? 60;
-    const step = duration; // step is coupled to service duration
-    const slots: string[] = [];
-
-    // Compute "today" and current time in the business timezone (America/Bogota).
-    // Use a YYYY-MM-DD string key comparison to avoid getTime() drift.
-    const nowInBusiness = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    );
-    const todayKey = [
-      nowInBusiness.getFullYear(),
-      String(nowInBusiness.getMonth() + 1).padStart(2, '0'),
-      String(nowInBusiness.getDate()).padStart(2, '0'),
-    ].join('-');
-    const isToday = dateKey === todayKey;
-    // Use < (not <=) so a slot starting exactly at the current minute is still offered.
-    const currentMinutes =
-      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
-
-    for (const window of mergedWindows) {
-      // Snap the cursor to the next full-hour boundary so slots always start
-      // on clean HH:00 marks (e.g. a window that opens at 08:30 offers 09:00
-      // as its first slot, not a fractional time).
-      let cursor = window.startMinute;
-      if (cursor % 60 !== 0) {
-        cursor = cursor + (60 - (cursor % 60));
-      }
-
-      while (cursor + duration <= window.endMinute) {
-        const start = cursor;
-        const end = cursor + duration; // guaranteed not to exceed window end
-
-        // Skip past slots that have already elapsed today.
-        if (isToday && start < currentMinutes) {
-          cursor += step;
-          continue;
-        }
-
-        // Reject any slot that overlaps an existing reservation.
-        const hasOverlapWithReservation = reservations.some(
-          (res) =>
-            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
-        );
-
-        // Reject any slot that falls inside a manual block.
-        const isBlocked = blocks.some((block) => {
-          // A block with no time bounds covers the entire day.
-          if (block.startMinute === null && block.endMinute === null) {
-            return true;
-          }
-          return (
-            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
-          );
-        });
-
-        if (!hasOverlapWithReservation && !isBlocked) {
-          slots.push(this.formatTime(start));
-        }
-
-        cursor += step;
-      }
-    }
-
-    return slots;
-  }
-
   /* =====================================================
      ITEMS
   ===================================================== */
@@ -724,6 +664,7 @@ export class PublicService {
     const where: any = {
       businessId: business.id,
       status: 'ACTIVE',
+      visibleInCatalog: true,
     };
 
     if (type) where.type = type;
@@ -827,7 +768,7 @@ export class PublicService {
       ]),
     );
 
-    const visibleItems: any[] = [];
+    const visibleItems: typeof data = [];
     for (const [index, item] of data.entries()) {
       const sellability = itemSellabilities[index];
       if (sellability.sellable) {
@@ -852,8 +793,7 @@ export class PublicService {
         visibleItems.map(async (item) => {
           const { currentStock, averageCost, ...cleanItem } = item;
           return {
-            ...cleanItem,
-            price: Number(item.price),
+            ...toPublicItem(cleanItem),
             sellability: { sellable: true },
             recipes: item.recipes
               .filter((recipe: PublicRecipeLine) => recipe.isOptional)
@@ -888,22 +828,18 @@ export class PublicService {
         businessId: business.id,
         type: 'SERVICE',
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
     });
 
     if (!item) throw new BadRequestException('Invalid service');
 
-    const selectedDate = this.parseDateOnly(date);
-    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
-      where: { businessId: business.id, itemId: item.id },
+    return this.availability.getSlots({
+      businessId: business.id,
+      itemId: item.id,
+      durationMinutes: item.durationMinutes,
+      date: this.parseDateOnly(date),
     });
-    const hasSpecificWindows = specificWindowsCount > 0;
-    return this.getAvailabilitySlotsForItem(
-      business.id,
-      item,
-      selectedDate,
-      hasSpecificWindows,
-    );
   }
 
   async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
@@ -915,150 +851,106 @@ export class PublicService {
         businessId: business.id,
         type: 'SERVICE',
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
     });
 
     if (!item) throw new BadRequestException('Invalid service');
 
-    const { year, monthIndex } = this.parseMonth(month);
-    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
-    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-
-    const nowInBusiness = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    );
-    const today = new Date(
-      Date.UTC(
-        nowInBusiness.getFullYear(),
-        nowInBusiness.getMonth(),
-        nowInBusiness.getDate(),
-        0,
-        0,
-        0,
-        0,
-      ),
-    );
-
-    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
-      where: { businessId: business.id, itemId: item.id },
+    return this.availability.getAvailableDates({
+      businessId: business.id,
+      itemId: item.id,
+      durationMinutes: item.durationMinutes,
+      ...this.parseMonth(month),
     });
-    const hasSpecificWindows = specificWindowsCount > 0;
-
-    const cursor = new Date(firstDay);
-    const availableDates: string[] = [];
-
-    while (cursor <= lastDay) {
-      if (cursor >= today) {
-        const slots = await this.getAvailabilitySlotsForItem(
-          business.id,
-          item,
-          new Date(cursor),
-          hasSpecificWindows,
-        );
-
-        if (slots.length > 0) {
-          availableDates.push(this.formatDateOnly(cursor));
-        }
-      }
-
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    return availableDates;
   }
 
   /* =====================================================
      CREATE RESERVATION
   ===================================================== */
 
-  async createReservation(slug: string, body: any) {
+  async createReservation(slug: string, dto: CreatePublicReservationDto) {
     const business = await this.findActiveBusiness(slug);
-
-    return this.prisma.$transaction(async (tx) => {
-      const {
-        itemId,
-        customerName,
-        customerWhatsapp,
-        date,
-        startMinute,
-        endMinute,
-      } = body;
-
-      if (!customerName || !customerWhatsapp)
-        throw new BadRequestException('Customer data required');
-
-      if (startMinute >= endMinute)
-        throw new BadRequestException('Invalid time range');
-
-      const selectedDate = this.parseDateOnly(date);
-
-      const nowInBusiness = new Date(
-        new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-      );
-      const today = new Date(
-        Date.UTC(
-          nowInBusiness.getFullYear(),
-          nowInBusiness.getMonth(),
-          nowInBusiness.getDate(),
-          0,
-          0,
-          0,
-          0,
-        ),
-      );
-
-      if (selectedDate < today)
-        throw new BadRequestException('Cannot reserve past dates');
-
-      const item = await tx.item.findFirst({
+    // Scoped to the slug's business: a key from another business can never match here.
+    const keyHash = dto.idempotencyKey
+      ? this.publicReservationKeyHash(business.id, dto.idempotencyKey)
+      : null;
+    const fingerprint = keyHash ? this.publicReservationFingerprint(dto) : null;
+    const findPrevious = (db: any) =>
+      db.reservation.findUnique({
         where: {
-          id: itemId,
-          businessId: business.id,
-          type: 'SERVICE',
-          status: 'ACTIVE',
+          businessId_publicRequestId: {
+            businessId: business.id,
+            publicRequestId: keyHash,
+          },
         },
+        select: PUBLIC_RESERVATION_RESULT,
       });
 
-      if (!item) throw new BadRequestException('Invalid service');
-
-      const specificWindowsCount = await tx.serviceScheduleWindow.count({
-        where: { businessId: business.id, itemId: item.id },
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Every new booking is policy 2: retries must be idempotent.
+        if (!keyHash)
+          throw new BadRequestException({
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'idempotencyKey is required',
+          });
+        if (keyHash) {
+          const previous = await findPrevious(tx);
+          if (previous)
+            return this.resolvePublicReservationReplay(previous, fingerprint!);
+        }
+        // Hidden from the catalog = not bookable publicly. A hidden price is bookable.
+        const hiddenService = await tx.item.findFirst({
+          where: {
+            id: dto.itemId,
+            businessId: business.id,
+            visibleInCatalog: false,
+          },
+          select: { id: true },
+        });
+        if (hiddenService) throw new BadRequestException('Invalid service');
+        const slot = await this.availability.reserveSlot(tx, {
+          businessId: business.id,
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+        });
+        const created = await tx.reservation.create({
+          data: {
+            businessId: business.id,
+            itemId: slot.itemId,
+            customerName: dto.customerName,
+            customerWhatsapp: dto.customerWhatsapp,
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+            origin: 'PUBLIC_STORE',
+            // Public bookings keep the documented CASH default (no payment step in the store);
+            // the business can correct it from «Editar» before completing.
+            ...(await newReservationPolicy(tx, business.id, slot.itemId)),
+            publicRequestId: keyHash,
+            publicRequestFingerprint: fingerprint,
+          },
+          select: PUBLIC_RESERVATION_RESULT,
+        });
+        return this.publicReservationResult(created);
       });
-      const hasSpecificWindows = specificWindowsCount > 0;
-
-      const availableSlots = await this.getAvailabilitySlotsForItem(
-        business.id,
-        item,
-        selectedDate,
-        hasSpecificWindows,
-      );
-      const requestedSlot = this.formatTime(startMinute);
-
-      if (!availableSlots.includes(requestedSlot)) {
-        throw new BadRequestException(
-          'Time slot already reserved or unavailable',
-        );
+      // Logs never include the key, its hash or the fingerprint.
+      console.log('[PublicService] Created public reservation');
+      return result;
+    } catch (error) {
+      if (keyHash) {
+        // A concurrent twin may have committed first. It surfaces as P2002 on the key index
+        // or, more often, as "slot unavailable" after waiting on the agenda lock. Either way
+        // the same replay rules apply; never a second booking.
+        const concurrent = await findPrevious(this.prisma);
+        if (concurrent)
+          return this.resolvePublicReservationReplay(concurrent, fingerprint!);
       }
-
-      const reservation = await tx.reservation.create({
-        data: {
-          businessId: business.id,
-          itemId,
-          customerName,
-          customerWhatsapp,
-          date: selectedDate,
-          startMinute,
-          endMinute,
-          status: 'PENDING',
-          origin: 'PUBLIC_STORE',
-        },
-      });
-
-      console.log(
-        `[PublicService] Created reservation origin: ${reservation.origin}`,
-      );
-      return reservation;
-    });
+      throw toBookingConflict(error);
+    }
   }
 
   /* =====================================================
@@ -1110,6 +1002,7 @@ export class PublicService {
         id: { in: uniqueItemIds },
         businessId: business.id,
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
       include: {
         recipes: {
@@ -1131,6 +1024,8 @@ export class PublicService {
       dbItems.some((item) => item.status !== 'ACTIVE')
     )
       throw new BadRequestException('Invalid items');
+    // Cart may hold price-on-request lines; a direct order cannot (WhatsApp / quotation instead).
+    assertNoHiddenPrices(dbItems);
     const dbItemById = new Map(dbItems.map((item) => [item.id, item]));
 
     const visibleCustomizationNotes: string[] = [];
@@ -1387,6 +1282,71 @@ export class PublicService {
     };
   }
 
+  getQuotation(token: string) {
+    if (!this.quotationsService) {
+      throw new ServiceUnavailableException('Cotizaciones no disponibles');
+    }
+    return this.quotationsService.findByPublicToken(token);
+  }
+
+  /* =====================================================
+     CREATE QUOTATION (solicitud desde la tienda)
+  ===================================================== */
+
+  async createQuotation(slug: string, dto: CreatePublicQuotationDto) {
+    if (!this.quotationsService) {
+      throw new ServiceUnavailableException('Cotizaciones no disponibles');
+    }
+    const business = await this.findActiveBusiness(slug);
+
+    // Solo productos que la tienda publica: sin esto se cotizaría catálogo oculto.
+    const ids = [...new Set(dto.items.map((line) => line.itemId))];
+    const visible = await this.prisma.item.count({
+      where: {
+        id: { in: ids },
+        businessId: business.id,
+        status: 'ACTIVE',
+        visibleInCatalog: true,
+      },
+    });
+    if (visible !== ids.length) throw new BadRequestException('Invalid items');
+
+    const quotation = await this.quotationsService.create(
+      business.id,
+      {
+        idempotencyKey: dto.idempotencyKey,
+        customerName: dto.customerName,
+        customerWhatsapp: dto.customerWhatsapp,
+        customerEmail: dto.customerEmail,
+        customerDocument: dto.customerDocument,
+        note: dto.note,
+        items: dto.items.map(({ itemId, quantity }) => ({ itemId, quantity })),
+      },
+      'PUBLIC_STORE',
+    );
+
+    // El tag del push es por cotización: un reintento reemplaza el aviso en vez de duplicarlo.
+    void this.pushNotificationsService
+      ?.notifyQuotationRequested({
+        businessId: business.id,
+        quotationId: quotation.id,
+        displayNumber: quotation.displayNumber,
+        customerName: quotation.customer.name,
+      })
+      .catch((error: unknown) => {
+        this.logger.error(
+          `No se pudo notificar la cotización ${quotation.id}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+
+    return {
+      message: 'Quotation created',
+      quotationId: quotation.publicToken,
+      number: quotation.displayNumber,
+    };
+  }
+
   /* =====================================================
      FIND RESERVATION BY ID (página pública de consulta)
   ===================================================== */
@@ -1397,6 +1357,10 @@ export class PublicService {
       select: {
         id: true,
         status: true,
+        archived: true,
+        commercialPolicyVersion: true,
+        inventoryPostedAt: true,
+        accountingPostedAt: true,
         customerName: true,
         customerWhatsapp: true,
         date: true,
@@ -1408,6 +1372,7 @@ export class PublicService {
             id: true,
             name: true,
             price: true,
+            publishWithoutPrice: true,
             durationMinutes: true,
           },
         },
@@ -1423,27 +1388,73 @@ export class PublicService {
     });
 
     if (!reservation) return null;
+    const isMirror = Boolean(
+      await this.prisma.order.findFirst({
+        where: { id, businessId: reservation.business.id },
+        select: { id: true },
+      }),
+    );
+    const {
+      archived,
+      commercialPolicyVersion,
+      inventoryPostedAt,
+      accountingPostedAt,
+      ...visible
+    } = reservation;
+    // Server-side eligibility (the token is still required to actually cancel).
+    const canCancel =
+      !isMirror &&
+      (isPolicyV2(reservation)
+        ? reservation.status === 'CONFIRMED' &&
+          !reservationTransitionBlock(reservation, 'cancel', 'public')
+        : reservation.status === 'PENDING' && !archived);
 
     return {
-      ...reservation,
+      ...visible,
+      canCancel,
       date: reservation.date.toISOString(),
       item: {
         ...reservation.item,
-        price: Number(reservation.item.price),
+        price: publicItemPrice(reservation.item),
       },
     };
   }
 
-  async cancelReservation(id: string) {
-    const reservation = await this.prisma.reservation.findUnique({
+  async cancelReservation(id: string, token?: string, reasonInput?: unknown) {
+    const reason = cancellationReason(reasonInput);
+    const found = await this.prisma.reservation.findUnique({
       where: { id },
+      select: { businessId: true, publicToken: true },
     });
 
-    if (!reservation) return null;
+    if (!found) return null;
+    // The id is shown in shared links and lookups; only the booking-time token authorizes.
+    if (!publicTokenMatches(found.publicToken, token)) {
+      throw new ForbiddenException(RESERVATION_ERRORS.publicCancelUnauthorized);
+    }
 
-    return this.prisma.reservation.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    return this.prisma.$transaction(async (tx) => {
+      const { reservation, alreadyCancelled } =
+        await this.availability.lockReservationForCancellation(
+          tx,
+          found.businessId,
+          id,
+        );
+      if (!publicTokenMatches(reservation.publicToken, token)) throw new ForbiddenException(RESERVATION_ERRORS.publicCancelUnauthorized);
+      const visible = (row: any) => ({ id: row.id, status: row.status, cancelledAt: row.cancelledAt });
+      if (alreadyCancelled) return visible(reservation);
+      // Mirrors were already rejected by lockReservationForCancellation.
+      const restriction = reservationTransitionBlock(reservation, 'cancel', 'public');
+      if (restriction) lifecycleConflict(restriction);
+      if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
+        throw new ConflictException(RESERVATION_ERRORS.publicCancelNotAllowed);
+      }
+      return visible(
+        await tx.reservation.update({
+          where: { id },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
+        }),
+      );
     });
   }
 
@@ -1483,8 +1494,9 @@ export class PublicService {
         OR: phoneConditions,
       },
       select: {
+        // publicToken is deliberately omitted: it authorizes cancellation and this
+        // lookup only needs a few phone digits.
         id: true,
-        publicToken: true,
         status: true,
         customerName: true,
         customerWhatsapp: true,
@@ -1498,6 +1510,7 @@ export class PublicService {
             id: true,
             name: true,
             price: true,
+            publishWithoutPrice: true,
             durationMinutes: true,
           },
         },
@@ -1520,7 +1533,7 @@ export class PublicService {
       date: reservation.date.toISOString(),
       item: {
         ...reservation.item,
-        price: Number(reservation.item.price),
+        price: publicItemPrice(reservation.item),
       },
     }));
   }

@@ -25,7 +25,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 export type PublicReservationItem = {
   id: string;
   publicToken?: string | null;
-  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
   customerName: string | null;
   customerWhatsapp: string | null;
   date: string;
@@ -85,7 +85,8 @@ function formatCurrency(value: number): string {
     .replace(/\s+/g, "");
 }
 
-function StatusBadge({ status }: { status: "PENDING" | "CONFIRMED" | "CANCELLED" }) {
+function StatusBadge({ status }: { status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" }) {
+  if (status === "COMPLETED") return <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">Finalizada</span>;
   if (status === "CONFIRMED") {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">

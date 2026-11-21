@@ -224,7 +224,7 @@ function normalizeSearchText(value?: string | null) {
 function originSearchText(originType?: string | null) {
   if (!originType) return "";
   if (originType === "MANUAL") return "manual";
-  if (originType === "ORDER") return "automatica venta orden";
+  if (originType === "ORDER") return "automatica venta orden reserva servicio";
   if (originType === "SIMPLE_TAX_PERIOD") return "regimen simple impuesto rst";
   if (originType.startsWith("PAYROLL_")) return "nomina payroll";
   return originType.replace(/_/g, " ").toLowerCase();
@@ -700,6 +700,11 @@ export default function ContabilidadPage() {
           movement.nature,
           movement.originType,
           originSearchText(movement.originType),
+          // Traceability: the references Ventas shows for the sale or reservation
+          // (card "#XXXX" = first 4, details "#xxxxxxxx" = last 8).
+          movement.originId
+            ? `${movement.originId} #${movement.originId.slice(0, 4)} #${movement.originId.slice(-8)}`
+            : "",
         ].join(" "),
       );
       return text.includes(query);

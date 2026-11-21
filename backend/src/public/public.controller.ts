@@ -1,3 +1,7 @@
+import { UseGuards, UseInterceptors } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { CreatePublicQuotationDto } from './dto/create-public-quotation.dto';
+import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Controller,
   Get,
@@ -10,8 +14,11 @@ import {
 } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
+import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
+import { CancelPublicReservationDto } from './dto/cancel-public-reservation.dto';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 
+@UseInterceptors(ReservationConflictInterceptor)
 @Controller('public')
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
@@ -26,10 +33,24 @@ export class PublicController {
   }
 
   @Post('reservations/:id/cancel')
-  async cancelReservation(@Param('id') id: string) {
-    const reservation = await this.publicService.cancelReservation(id);
+  async cancelReservation(
+    @Param('id') id: string,
+    @Body() dto: CancelPublicReservationDto,
+  ) {
+    const reservation = await this.publicService.cancelReservation(
+      id,
+      dto?.token,
+      dto?.reason,
+    );
     if (!reservation) throw new NotFoundException('Reserva no encontrada');
     return reservation;
+  }
+
+  // También antes de ':slug/...' por la misma razón.
+  @Get('quotations/:token')
+  @Header('Cache-Control', 'no-store')
+  getQuotation(@Param('token') token: string) {
+    return this.publicService.getQuotation(token);
   }
 
   // Canonical slug for server-side 308 redirects and store metadata.
@@ -73,13 +94,27 @@ export class PublicController {
   }
 
   @Post(':slug/reserve')
-  createReservation(@Param('slug') slug: string, @Body() body: any) {
-    return this.publicService.createReservation(slug, body);
+  createReservation(
+    @Param('slug') slug: string,
+    @Body() dto: CreatePublicReservationDto,
+  ) {
+    return this.publicService.createReservation(slug, dto);
   }
 
   @Post(':slug/order')
   createOrder(@Param('slug') slug: string, @Body() dto: CreatePublicOrderDto) {
     return this.publicService.createOrder(slug, dto);
+  }
+
+  // Público y sin login: se limita por IP para que no llene de cotizaciones ni de notificaciones.
+  @Post(':slug/quotation')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  createQuotation(
+    @Param('slug') slug: string,
+    @Body() dto: CreatePublicQuotationDto,
+  ) {
+    return this.publicService.createQuotation(slug, dto);
   }
 
   @Get(':slug/fiscal-settings')

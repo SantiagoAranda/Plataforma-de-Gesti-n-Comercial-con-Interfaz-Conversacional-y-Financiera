@@ -452,6 +452,8 @@ describe('Manual Verification of Colombian Tax Module', () => {
     const accountingService = new AccountingService(prisma);
 
     const txMock = {
+      pucCuenta: prisma.pucCuenta,
+      pucSubcuenta: prisma.pucSubcuenta,
       inventoryMovement: {
         findMany: jest.fn().mockResolvedValue([{ totalValue: new Prisma.Decimal(4000) }]),
       },

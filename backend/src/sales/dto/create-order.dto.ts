@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsUUID,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -129,6 +130,16 @@ export class CreateOrderDto {
   @IsInt()
   @Min(1)
   durationMinutes?: number;
+
+  @IsOptional()
+  @IsUUID()
+  idempotencyKey?: string;
+
+  // Retrospective registration of a manual scheduled service that already ended:
+  // the explicit declaration that it was provided. Created and completed atomically.
+  @IsOptional()
+  @IsBoolean()
+  serviceProvided?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })

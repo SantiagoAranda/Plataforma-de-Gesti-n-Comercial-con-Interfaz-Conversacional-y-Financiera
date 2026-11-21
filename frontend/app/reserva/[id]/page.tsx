@@ -10,14 +10,18 @@ import {
 } from "lucide-react";
 import CancelReservationButton from "./CancelReservationButton";
 import ReservationBackButton from "./ReservationBackButton";
+import { canCancelPublicReservation } from "@/src/lib/sales/reservationCancelUi";
+import { cleanText, shareMetadata } from "@/src/lib/publicMetadata";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ReservationStatus = "PENDING" | "CONFIRMED" | "CANCELLED";
+type ReservationStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
 
 interface ReservationDetail {
   id: string;
   status: ReservationStatus;
+  // Server-side eligibility for cancelling from this page (token still required).
+  canCancel?: boolean;
   customerName: string | null;
   customerWhatsapp: string | null;
   date: string; // ISO string
@@ -70,17 +74,26 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const reservation = await getReservation(id);
+  // Private link (customer name and phone on the page): never indexed, and previews show only the business.
+  const robots = { index: false, follow: false };
 
   if (!reservation) {
     return {
       title: "Reserva no encontrada",
       description: "No se pudo localizar la información de esta reserva.",
+      robots,
     };
   }
 
+  const name = cleanText(reservation.business.name) || "SACTEC";
   return {
-    title: `Tu Reserva – ${reservation.business.name}`,
-    description: `Detalle de tu turno confirmado en ${reservation.business.name}.`,
+    // No url and no business logo: the public reservation response has no logo, so the SACTEC image is used.
+    ...shareMetadata({
+      title: `Reservas en ${name} | SACTEC`,
+      description: `Consultá los servicios disponibles y gestioná tus reservas en ${name}.`,
+      imageAlt: name,
+    }),
+    robots,
   };
 }
 
@@ -123,6 +136,7 @@ function capitalize(str: string): string {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: ReservationStatus }) {
+  if (status === "COMPLETED") return <span aria-label="Estado: Finalizada" className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700">Finalizada</span>;
   const isConfirmed = status === "CONFIRMED";
   const isPending = status === "PENDING";
 
@@ -212,10 +226,15 @@ function ReservationNotFound() {
 
 export default async function ReservationDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ t?: string | string[] }>;
 }) {
   const { id } = await params;
+  const { t } = await searchParams;
+  // Booking-time token; links without it (lookup, old links) are view-only.
+  const cancelToken = typeof t === "string" ? t : null;
   const reservation = await getReservation(id);
 
   if (!reservation) {
@@ -351,10 +370,20 @@ export default async function ReservationDetailPage({
             Contactar por WhatsApp
           </a>
 
-          {/* Cancelar reserva — siempre visible salvo si ya está cancelada */}
-          {reservation.status !== "CANCELLED" && (
-            <CancelReservationButton reservationId={reservation.id} />
-          )}
+          {/* Cancelar reserva — según el servidor y con el enlace recibido al reservar */}
+          {canCancelPublicReservation(reservation.status, cancelToken, reservation.canCancel) ? (
+            <CancelReservationButton reservationId={reservation.id} token={cancelToken!} />
+          ) : reservation.status === "PENDING" ? (
+            <p className="text-center text-[12px] text-slate-400">
+              Para cancelar, usá el enlace que recibiste al reservar o contactá al negocio.
+            </p>
+          ) : reservation.status === "CONFIRMED" ? (
+            <p className="text-center text-[12px] text-slate-400">
+              {reservation.canCancel
+                ? "Tu reserva está confirmada. Para cancelarla, usá el enlace que recibiste al reservar o contactá al negocio."
+                : "Tu reserva está confirmada. Para cancelarla, contactá al negocio."}
+            </p>
+          ) : null}
         </div>
       </footer>
     </div>

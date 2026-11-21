@@ -1,3 +1,5 @@
+import { UseInterceptors } from '@nestjs/common';
+import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Body,
   Controller,
@@ -11,14 +13,19 @@ import {
 } from '@nestjs/common';
 
 import { ReservationsService } from './reservations.service';
+import { SalesService } from '../sales/sales.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { RescheduleReservationDto } from './dto/reschedule-reservation.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 
+@UseInterceptors(ReservationConflictInterceptor)
 @Controller('reservations')
 export class ReservationsController {
-  constructor(private reservationsService: ReservationsService) {}
+  constructor(
+    private reservationsService: ReservationsService,
+    private salesService: SalesService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
@@ -62,14 +69,34 @@ export class ReservationsController {
 
   @Patch(':id/cancel')
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
-  cancel(@Req() req: any, @Param('id') id: string) {
-    return this.reservationsService.cancel(req.user.businessId, id);
+  cancel(@Req() req: any, @Param('id') id: string, @Body() body?: { reason?: unknown }) {
+    return this.reservationsService.cancel(req.user.businessId, id, body?.reason);
   }
 
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   confirm(@Req() req: any, @Param('id') id: string) {
-    return this.reservationsService.confirm(req.user.businessId, id);
+    // Same commercial confirmation as Ventas (inventory + accounting); a status-only
+    // confirm would leave CONFIRMED reservations without their effects.
+    return this.salesService.confirmOrder(
+      req.user.businessId,
+      id,
+      undefined,
+      'RESERVATION',
+    );
+  }
+
+  @Post(':id/complete')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  complete(@Req() req: any, @Param('id') id: string, @Body() body: { serviceProvided?: unknown }) {
+    return this.salesService.completeReservation(req.user.businessId, id, body?.serviceProvided);
+  }
+
+  // Policy 2: the customer did not attend. Explicit confirmation required; no commercial effect.
+  @Post(':id/no-show')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  noShow(@Req() req: any, @Param('id') id: string, @Body() body: { confirmed?: unknown }) {
+    return this.salesService.markNoShow(req.user.businessId, id, body?.confirmed);
   }
 
   @Patch(':id/reschedule')

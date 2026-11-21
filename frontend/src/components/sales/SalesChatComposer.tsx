@@ -24,10 +24,12 @@ import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import { api } from "@/src/lib/api";
 import { isValidEmail } from "@/src/lib/email";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
+import { serviceHasEnded } from "@/src/lib/sales/retrospectiveSale";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 import {
   agendaPayloadForLine,
+  buildLocalScheduledAt,
   requiresServiceAgenda,
   resolveAgendaLineType,
 } from "@/src/lib/sales/serviceAgenda";
@@ -138,6 +140,9 @@ function deriveSaleConceptFromItems(items: EditableItem[], saleType: Sale["type"
   return SALE_CONCEPT_PRIORITY.find((concept) => concepts.includes(concept)) ?? concepts[0];
 }
 
+// Keep retrospective duration editing implemented but unavailable in Nueva Venta.
+const SHOW_RETROSPECTIVE_DURATION = false;
+
 export default function SalesChatComposer({
   mode = "create",
   sale = null,
@@ -150,6 +155,7 @@ export default function SalesChatComposer({
   taxSettingsEnabled: propEnabled,
   filterStatus = "ALL",
   onFilterStatusChange,
+  filterCounts,
   electronicInvoicingEnabled = false,
   searchCriterion = "GENERAL",
   onSearchCriterionChange,
@@ -169,6 +175,8 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
   filterStatus?: FilterStatus;
   onFilterStatusChange?: (status: FilterStatus) => void;
+  /** Cantidad por chip (ventas del período y cotizaciones vigentes). */
+  filterCounts?: { pending: number; closed: number; cancelled: number; quotations: number };
   electronicInvoicingEnabled?: boolean;
   searchCriterion?: SalesSearchCriterion;
   onSearchCriterionChange?: (criterion: SalesSearchCriterion) => void;
@@ -193,6 +201,13 @@ export default function SalesChatComposer({
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
+  const [historicalDuration, setHistoricalDuration] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expanded || mode !== "create") return;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expanded, mode]);
   const [formError, setFormError] = useState<string | null>(null);
   const [buyerEmailError, setBuyerEmailError] = useState<string | null>(null);
   const [isSearchCriterionOpen, setIsSearchCriterionOpen] = useState(false);
@@ -310,6 +325,17 @@ export default function SalesChatComposer({
   }, [items, businessItems]);
   const agendaItemType = agendaItem?.itemType;
   const requiresAgenda = requiresServiceAgenda(agendaItem, businessItems);
+  const selectedScheduledAt = buildLocalScheduledAt(scheduledDate, selectedStartMinute);
+  const configuredDuration = mode === "create"
+    ? businessItems.find(item => item.id === agendaItem?.itemId)?.durationMinutes ?? agendaItem?.durationMin
+    : agendaItem?.durationMin;
+  const effectiveDuration = (SHOW_RETROSPECTIVE_DURATION ? historicalDuration : null)
+    ?? configuredDuration ?? Number(manualDuration);
+  const isRetrospective = mode === "create" && requiresAgenda && serviceHasEnded(selectedScheduledAt, effectiveDuration, clockNow);
+  useEffect(() => { setHistoricalDuration(null); }, [scheduledDate, selectedStartMinute, agendaItem?.itemId, expanded]);
+  // A scheduled service is a booking (born CONFIRMED, sold on «Finalizar atención»): no sale status to pick.
+  // Historical policy 1 sales keep their selector when edited.
+  const isBookingForm = mode === "create" ? requiresAgenda : sale?.commercialPolicyVersion === 2;
 
   useEffect(() => {
     if (agendaItemType === "PRODUCT") {
@@ -549,7 +575,7 @@ export default function SalesChatComposer({
     if (cleanedItems.length === 0) return;
 
     const serviceItem = agendaItem;
-    const serviceDuration = serviceItem?.durationMin ?? Number(manualDuration || 0);
+    const serviceDuration = mode === "create" ? effectiveDuration : serviceItem?.durationMin ?? Number(manualDuration || 0);
     const agendaPayload = agendaPayloadForLine({
       requiresAgenda,
       date: scheduledDate,
@@ -598,7 +624,7 @@ export default function SalesChatComposer({
           customerName: cleanedName || undefined,
           customerWhatsapp: cleanedWhatsapp,
           type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
-          status,
+          status: isBookingForm ? "PENDIENTE" : status,
           paymentMethod: paymentMethod || "CASH",
           ...agendaPayload,
           buyerFiscalContext,
@@ -796,14 +822,29 @@ export default function SalesChatComposer({
               selectedStartMinute={selectedStartMinute}
               disabled={isReadonly}
               availabilitySaleId={mode === "edit" ? sale?.id : undefined}
-              durationMin={agendaItem.durationMin || Number(manualDuration) || undefined}
+              manualSale={mode === "create"}
+              durationMin={effectiveDuration || undefined}
               onChange={({ date, startMinute }) => {
                 setScheduledDate(date);
                 setSelectedStartMinute(startMinute);
               }}
             />
 
-            {!isReadonly && !agendaItem.durationMin && (
+            {SHOW_RETROSPECTIVE_DURATION && isRetrospective && (
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                <span>Atención pasada · Duración real en minutos</span>
+                <input aria-label="Duración real en minutos" type="number" min="1" max="1440" value={effectiveDuration}
+                  onChange={e => {
+                    const value = Number(e.target.value);
+                    if (Number.isInteger(value) && value > 0 && selectedStartMinute != null && selectedStartMinute + value <= 1440 && serviceHasEnded(selectedScheduledAt, value)) {
+                      setHistoricalDuration(value);
+                      setFormError(null);
+                    } else setFormError("La duración real debe corresponder a una atención ya terminada y finalizar dentro del mismo día.");
+                  }}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none focus:border-emerald-500" />
+              </label>
+            )}
+            {!isRetrospective && !isReadonly && !agendaItem.durationMin && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-slate-500 px-1">Duración en minutos</span>
                 <input
@@ -816,7 +857,7 @@ export default function SalesChatComposer({
                 />
               </div>
             )}
-            {!isReadonly && items[0]?.durationMin && (
+            {!isRetrospective && !isReadonly && items[0]?.durationMin && (
               <p className="px-1 text-[11px] font-semibold text-emerald-700">
                 Duración: {items[0].durationMin} min
               </p>
@@ -997,7 +1038,16 @@ export default function SalesChatComposer({
 
         {/* 4. Estado de venta & Medio de pago */}
         <div className="grid w-full min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-          <div>
+          {/* Bookings show their attention state instead; same cell, so the grid keeps its shape. */}
+          {isBookingForm ? (
+            <div
+              className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-2 text-xs font-semibold text-slate-700"
+              title="El turno queda confirmado. La venta se registra con «Finalizar atención»."
+            >
+              <span className="text-slate-500">Atención:</span>
+              <span className="rounded-md bg-white px-2 py-1 text-slate-950 shadow-sm">Confirmado</span>
+            </div>
+          ) : <div>
             <span className="sr-only">
               Estado de venta
             </span>
@@ -1025,7 +1075,7 @@ export default function SalesChatComposer({
                 Confirmado
               </button>
             </div>
-          </div>
+          </div>}
 
           <div>
             <span className="sr-only">
@@ -1096,6 +1146,7 @@ export default function SalesChatComposer({
 
   return (
     <div
+      inert={isSubmitting}
       className={`fixed inset-x-0 bottom-0 ${expanded ? "z-50" : "z-30"} px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none`}
       style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
     >
@@ -1276,7 +1327,7 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Pendientes
+                  Pendientes{filterCounts ? ` (${filterCounts.pending})` : ""}
                 </button>
                 <button
                   type="button"
@@ -1289,7 +1340,7 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Cerradas
+                  Cerradas{filterCounts ? ` (${filterCounts.closed})` : ""}
                 </button>
                 <button
                   type="button"
@@ -1302,7 +1353,20 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Canceladas
+                  Canceladas{filterCounts ? ` (${filterCounts.cancelled})` : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilterStatusChange(filterStatus === "QUOTATIONS" ? "ALL" : "QUOTATIONS")
+                  }
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    filterStatus === "QUOTATIONS"
+                      ? "border-violet-700 bg-violet-100 text-violet-800 font-semibold"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Cotizaciones{filterCounts ? ` (${filterCounts.quotations})` : ""}
                 </button>
                 </>}
                 {electronicInvoicingEnabled && onFiscalFilterActiveChange && (

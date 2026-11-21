@@ -17,6 +17,8 @@ export const STATUS_STYLES = {
     dotColor: "bg-blue-500",
   },
 
+  FINALIZADA: { label: "Finalizada", border: "border-l-4 border-emerald-500", badge: "bg-emerald-50 text-emerald-700 border border-emerald-200", softBg: "bg-emerald-50", dotColor: "bg-emerald-500" },
+
   CERRADO: {
     label: "Cerrado",
     border: "border-l-4 border-emerald-500",

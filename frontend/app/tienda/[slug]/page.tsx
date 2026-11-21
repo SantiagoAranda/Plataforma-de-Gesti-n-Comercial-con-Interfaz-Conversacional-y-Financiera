@@ -2,6 +2,7 @@ import { cache } from "react";
 import { headers } from "next/headers";
 import { notFound, permanentRedirect } from "next/navigation";
 import PublicStoreClient from "./PublicStoreClient";
+import { cleanText, shareMetadata } from "@/src/lib/publicMetadata";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 interface Props {
@@ -46,10 +47,19 @@ export async function generateMetadata({ params }: Props) {
   const first = (name: string) => requestHeaders.get(name)?.split(",")[0].trim();
   const host = first("x-forwarded-host") ?? first("host");
   const protocol = first("x-forwarded-proto") ?? "https";
+  // Historical slugs redirect, so the current slug is the only indexable address.
+  const canonical = host ? `${protocol}://${host}/tienda/${encodeURIComponent(store.slug)}` : undefined;
+  const name = cleanText(store.name) || "Tienda";
   return {
-    title: { absolute: store.name || "Tienda" },
-    // Historical slugs redirect, so the current slug is the only indexable address.
-    ...(host && { alternates: { canonical: `${protocol}://${host}/tienda/${encodeURIComponent(store.slug)}` } }),
+    ...shareMetadata({
+      title: `${name} | SACTEC`,
+      // The public store contract has no business description, so every store uses this text.
+      description: `Explorá los productos y servicios de ${name} en SACTEC.`,
+      url: canonical,
+      imageUrl: store.logoUrl,
+      imageAlt: name,
+    }),
+    ...(canonical && { alternates: { canonical } }),
   };
 }
 

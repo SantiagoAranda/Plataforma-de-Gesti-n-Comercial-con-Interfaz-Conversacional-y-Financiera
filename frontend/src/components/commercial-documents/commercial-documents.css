@@ -1,0 +1,108 @@
+/* Portado de docs/archivos-interfaz/Menú_en_Ventas.html (Carta v5 y Ticket). Sin bloques DIAN. */
+.sheet-carta, .sheet-carta * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.sheet-carta { --paper: #ffffff; --ink: #1d1d1f; --soft: #4b4b50; --mute: #7b7b80; --band: #d9d9db; --band2: #cdcdd0; --rule: #dedee0; --dark: #2a2a2c; --tick: #8c8c91;
+    position: relative; display: flex; flex-direction: column; line-height: 1.45; }
+.cv-main { position: relative; flex: 1; display: flex; flex-direction: column; padding: 40px 48px 0; }
+
+/* Encabezado: título + bloque gris con logo (pegado al borde superior) */
+.cv-hero { position: relative; box-sizing: border-box; padding-top: 50px; min-height: 96px; }
+.cv-logobox { position: absolute; top: -40px; right: 4px; width: 132px; height: 134px; background: var(--band); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; }
+.cv-mark { width: 50px; height: 50px; border: 3px solid var(--ink); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; font-style: italic; color: var(--ink); }
+.cv-markname { font-size: 8.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--soft); }
+.cv-title { font-weight: 700; font-style: italic; letter-spacing: .2em; text-transform: uppercase; color: var(--ink); line-height: 1.1; }
+.cv-subtitle { font-size: 10px; color: var(--mute); margin-top: 6px; letter-spacing: .02em; }
+.cv-chip { display: inline-flex; align-items: center; padding: 1px 9px; border: 1px solid var(--dark); border-radius: 999px; font-size: 8.5px; font-weight: 600; color: var(--dark); }
+
+/* Partes */
+.cv-parties { display: grid; grid-template-columns: 215px minmax(0, 1fr); column-gap: 30px; margin-top: 22px; align-items: start; }
+.cv-plbl { font-size: 9.5px; color: var(--mute); }
+.cv-pname { font-size: 13.5px; font-weight: 700; line-height: 1.25; margin-top: 2px; color: var(--ink); }
+.cv-psub { font-size: 9.5px; color: var(--soft); margin-top: 1px; }
+.cv-pk { font-size: 9.5px; font-weight: 700; margin-top: 9px; color: var(--ink); }
+.cv-pt { font-size: 9.5px; color: var(--soft); }
+.cv-pt b { color: var(--ink); font-weight: 700; }
+.cv-pt.sp { margin-top: 8px; }
+
+/* Cuerpo: barra lateral + columna de tabla */
+.cv-body { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 29px; margin-top: 22px; align-items: start; }
+.cv-col { min-width: 0; }
+.cv-side { min-width: 0; }
+.cv-sec { margin-bottom: 14px; }
+.cv-sec::before, .cv-side:not(:empty)::after { content: ''; display: block; width: 58px; border-top: 1px solid var(--tick); }
+.cv-sec::before { margin-bottom: 14px; }
+.cv-st { font-size: 10.5px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+.cv-sl { font-size: 9px; font-weight: 600; color: var(--ink); margin-top: 7px; }
+.cv-sv { font-size: 9.5px; color: var(--soft); overflow-wrap: anywhere; }
+.cv-sbig { font-size: 15px; font-weight: 700; margin-top: 3px; white-space: nowrap; color: var(--ink); }
+.cv-line { border-bottom: 1px solid #a9a9ae; height: 20px; }
+.cv-sub { font-size: 8.5px; color: var(--mute); margin-top: 2px; }
+
+/* Tabla */
+.cv-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.cv-table th { background: var(--band); font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: 11px 12px; text-align: left; color: var(--soft); white-space: nowrap; }
+.cv-table td { padding: 11px 12px; vertical-align: top; border-bottom: 1px solid var(--rule); color: var(--soft); }
+.cv-table tbody tr:last-child td { border-bottom: 1px solid var(--dark); }
+.cv-table tr { page-break-inside: avoid; }
+.cv-table td.c, .cv-table td.r { white-space: nowrap; }
+.cv-table .c, .cv-table .k { text-align: center; }
+.cv-table .r { text-align: right; }
+.cv-table td.r:last-child { font-weight: 600; color: var(--ink); }
+.cv-table td.d { overflow-wrap: anywhere; }
+.cv-prod { font-weight: 500; color: var(--ink); }
+.cv-det { font-size: 8.5px; color: var(--mute); margin-top: 1px; line-height: 1.4; }
+.cv-check { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #8a8a8e; border-radius: 3px; vertical-align: middle; }
+
+/* Totales */
+.cv-trow { display: flex; justify-content: space-between; padding: 11px 12px; font-size: 10.5px; color: var(--soft); border-bottom: 1px solid var(--rule); }
+.cv-trow span:last-child { font-weight: 600; color: var(--ink); }
+.cv-grand { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 13px 12px; background: var(--band2); }
+.cv-grand .t { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.cv-grand .a { font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.cv-net { display: flex; justify-content: space-between; padding: 9px 12px 0; font-size: 10px; font-weight: 600; color: var(--soft); }
+.cv-words { margin-top: 12px; padding: 0 12px; }
+.cv-wt { font-size: 10px; font-style: italic; color: var(--soft); margin-top: 2px; }
+
+/* Parte inferior: contacto · términos · firma */
+.cv-bottom { display: grid; grid-template-columns: 160px minmax(0, 1fr) 150px; column-gap: 29px; margin-top: 26px; align-items: start; }
+.cv-bt { font-size: 10px; font-weight: 700; color: var(--ink); }
+.cv-btx { font-size: 9px; color: var(--soft); line-height: 1.55; margin-top: 3px; }
+.cv-btx.sp { margin-top: 8px; }
+.cv-thanks { margin-top: 14px; font-size: 9px; color: var(--mute); }
+.cv-thanks b { display: block; font-size: 10px; color: var(--ink); font-weight: 700; }
+.cv-signs { text-align: center; }
+.cv-sg { margin-top: 38px; border-top: 1px solid var(--ink); padding-top: 6px; font-size: 9px; color: var(--mute); line-height: 1.4; }
+.cv-sg:first-child { margin-top: 30px; }
+.cv-sg b { display: block; font-size: 9.5px; font-weight: 700; color: var(--ink); }
+
+
+/* Continuación y pie (banda gris) */
+.cv-chead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 14px; margin-bottom: 4px; background: var(--band); font-size: 9.5px; color: var(--soft); }
+.cv-chead b { color: var(--ink); font-style: italic; letter-spacing: .2em; text-transform: uppercase; font-size: 11px; }
+.cv-foot { margin: auto -48px 0; padding: 15px 48px; background: var(--band); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.cv-foot .l { font-size: 9px; font-weight: 600; color: var(--ink); }
+.cv-foot .r { font-size: 8.5px; color: var(--soft); }
+.cv-pages { display: flex; flex-direction: column; gap: 20px; width: 816px; }
+
+.sheet-carta { width: 816px; height: 1056px; overflow: hidden; background: var(--paper); color: var(--ink); box-shadow: 0 4px 22px rgba(0,0,0,.28); box-sizing: border-box; font-family: 'Poppins', 'Inter', sans-serif; font-size: 12px; }
+.sheet-ticket { width: 302px; background: #fff; color: #000; padding: 14px 12px 18px; box-sizing: border-box; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.35; }
+.sheet-ticket .c { text-align: center; }
+.sheet-ticket .b { font-weight: 700; }
+.sheet-ticket .line { border-top: 1px dashed #000; margin: 8px 0; }
+.sheet-ticket .f { display: flex; justify-content: space-between; gap: 8px; }
+.sheet-ticket .big { font-size: 15px; font-weight: 700; }
+.sheet-ticket.w58 { width: 219px; font-size: 10.5px; padding: 12px 8px 16px; }
+.sheet-ticket.w58 .big { font-size: 13px; }
+
+/* height:0 + overflow:hidden evita que la medición agrande el área desplazable (el ancestro con transform es su bloque contenedor) */
+.cd-measure { position: absolute; left: -10000px; top: 0; width: 816px; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.cd-measure .sheet-carta { height: auto; }
+
+@media print {
+  @page { margin: 0; }
+  body * { visibility: hidden !important; }
+  .cd-print-root, .cd-print-root * { visibility: visible !important; }
+  .cd-print-root { position: absolute; left: 0; top: 0; transform: none !important; }
+  .cd-print-root .sheet-carta { box-shadow: none; break-after: page; page-break-after: always; }
+  .cd-print-root .sheet-carta:last-child { break-after: auto; page-break-after: auto; }
+  .cd-print-root .sheet-ticket { margin: 0; }
+}

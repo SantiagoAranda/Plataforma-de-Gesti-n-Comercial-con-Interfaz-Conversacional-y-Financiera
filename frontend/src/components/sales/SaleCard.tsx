@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2, FileText, Truck, ReceiptText } from "lucide-react";
+import type { DocumentKind } from "@/src/components/commercial-documents/types";
+import { saleDocumentKinds, DOCUMENT_LABEL } from "@/src/lib/sales/saleDocument";
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
-import { getStatusStyles } from "@/src/lib/statusStyles";
+import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
+import CardActionsMenu, { cardMenuActionClass } from "./CardActionsMenu";
 import { formatBusinessTime } from "@/src/lib/businessDate";
 import SaleFiscalSummary from "./SaleFiscalSummary";
 import { getCached } from "@/src/lib/cache";
@@ -66,6 +69,11 @@ type Props = {
   selected?: boolean;
   onSelect?: () => void;
   onDetails?: (sale: Sale) => void;
+  onComplete?: (sale: Sale) => void;
+  onCancelReservation?: (sale: Sale) => void;
+  onNoShow?: (sale: Sale) => void;
+  onEdit?: (sale: Sale) => void;
+  onDelete?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
@@ -81,6 +89,7 @@ type Props = {
   canGenerateElectronicInvoice?: boolean;
   factusEnabled?: boolean;
   onGenerateElectronicInvoice?: (sale: Sale) => void;
+  onViewDocument?: (sale: Sale, kind: DocumentKind) => void;
 };
 
 function getItemUnitPrice(it: Sale["items"][number]) {
@@ -97,7 +106,7 @@ export default function SaleCard({
   sale,
   selected = false,
   onSelect,
-  onDetails,
+  onDetails, onComplete, onCancelReservation, onNoShow, onEdit, onDelete,
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
@@ -113,13 +122,14 @@ export default function SaleCard({
   canGenerateElectronicInvoice = false,
   factusEnabled = false,
   onGenerateElectronicInvoice,
+  onViewDocument,
 }: Props) {
   const router = useRouter();
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
   const [commercialMenuOpen, setCommercialMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (sale.status === "CERRADO" || sale.status === "CANCELADO" || !sale.items?.length) {
+    if (sale.status === "CERRADO" || sale.status === "CONFIRMADO" || sale.status === "FINALIZADA" || sale.status === "CANCELADO" || !sale.items?.length) {
       setHasPriceDivergence(false);
       return;
     }
@@ -159,7 +169,9 @@ export default function SaleCard({
   }, [sale]);
 
   const total = calcTotal(sale);
-  const styles = getStatusStyles(sale.status);
+  const presentation = useSaleBadge(sale)!;
+  const styles = presentation.styles;
+  const operational = presentation.operational;
   const fiscalPresentation = fiscalDocument
     ? FISCAL_STATUS_PRESENTATION[fiscalDocument.status]
     : null;
@@ -172,6 +184,38 @@ export default function SaleCard({
     if (onDetails) return onDetails(sale);
     router.push(`/ventas/${sale.id}`);
   };
+
+  const reservationActions = (close: () => void) => {
+    const run = (action: () => void) => { close(); action(); };
+    return <>
+      {onComplete && canUseSaleAction(sale, 'complete') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onComplete(sale))}><Check size={16} />Finalizar atención</button>}
+      {onCancelReservation && canUseSaleAction(sale, 'cancel') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onCancelReservation(sale))}><X size={16} />Cancelar reserva</button>}
+      {onNoShow && canUseSaleAction(sale, 'noShow') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onNoShow(sale))}><X size={16} />No asistió</button>}
+      {onEdit && canUseSaleAction(sale, 'edit') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onEdit(sale))}><Pencil size={16} />Editar</button>}
+      {onDelete && canUseSaleAction(sale, 'delete') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onDelete(sale))}><Trash2 size={16} />Eliminar</button>}
+      <button type="button" className={cardMenuActionClass} onClick={() => run(handleDetails)}><Eye size={16} />Ver detalles</button>
+      {documentActions(close)}
+    </>;
+  };
+
+  const documentKinds = saleDocumentKinds(sale, fiscalDocument?.status);
+  // Cerrada sin factura: factura electrónica, comprobante de pago y (productos) orden de entrega.
+  const showReceipt = !fiscalDocument && sale.status === "CERRADO" && Boolean(onReceipt);
+  const documentActions = (close: () => void) => <>
+    {showReceipt && <button type="button" className={cardMenuActionClass} onClick={() => { close(); onReceipt?.(sale); }}><ReceiptText size={16} />Comprobante de pago</button>}
+    {onViewDocument && documentKinds.map((kind) => (
+      <button key={kind} type="button" className={cardMenuActionClass} onClick={() => { close(); onViewDocument(sale, kind); }}>
+        {kind === "quotation" ? <FileText size={16} /> : <Truck size={16} />}{DOCUMENT_LABEL[kind]}
+      </button>
+    ))}
+  </>;
+  const hasDocuments = showReceipt || (Boolean(onViewDocument) && documentKinds.length > 0);
+  // Botón principal según el estado (prototipo del menú de Ventas).
+  const primary = !fiscalDocument && onViewDocument && documentKinds.includes("quotation") && sale.status !== "CONFIRMADO" && sale.status !== "FINALIZADA"
+    ? { label: "Ver cotización", run: () => onViewDocument(sale, "quotation") }
+    : !fiscalDocument && sale.status === "CERRADO"
+      ? { label: "Ver comprobante", run: undefined }
+      : { label: "Ver factura", run: undefined };
 
   return (
     <div
@@ -214,12 +258,13 @@ export default function SaleCard({
               </button>
             )}
 
-            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${fiscalPresentation?.badge ?? styles.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${fiscalPresentation?.dot ?? styles.dotColor}`} />
-              {fiscalPresentation?.label ?? styles.label}
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${(operational ? styles.badge : fiscalPresentation?.badge ?? styles.badge)}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${(operational ? styles.dotColor : fiscalPresentation?.dot ?? styles.dotColor)}`} />
+              {(operational ? styles.label : fiscalPresentation?.label ?? styles.label)}
             </span>
             {fiscalPresentation && fiscalDocument && onFiscalView && onFiscalDownload && onFiscalDispatch && onFiscalRetry && onFiscalAnnul && onCompleteAnnulment ? (
               <FiscalDocumentMenu
+                leadingActions={operational ? reservationActions : hasDocuments ? documentActions : undefined}
                 document={fiscalDocument}
                 canEmit={factusEnabled}
                 creditNote={creditNote}
@@ -231,15 +276,21 @@ export default function SaleCard({
                 onAnnul={onFiscalAnnul}
                 onCompleteAnnulment={onCompleteAnnulment}
               />
-            ) : canGenerateElectronicInvoice && onGenerateElectronicInvoice ? (
+            ) : operational ? <CardActionsMenu open={commercialMenuOpen} onOpenChange={setCommercialMenuOpen}>
+              {reservationActions(() => setCommercialMenuOpen(false))}
+              {canGenerateElectronicInvoice && onGenerateElectronicInvoice && <button type="button" className={cardMenuActionClass} onClick={() => { setCommercialMenuOpen(false); onGenerateElectronicInvoice(sale); }}>Generar factura electrónica</button>}
+            </CardActionsMenu> : canGenerateElectronicInvoice && onGenerateElectronicInvoice ? (
               <div className="relative" onClick={(event) => event.stopPropagation()}>
                 <button type="button" aria-label="Opciones de venta" aria-expanded={commercialMenuOpen} onClick={() => setCommercialMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-50"><MoreVertical className="h-4 w-4" /></button>
                 {commercialMenuOpen && <div className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); if (onDetails) onDetails(sale); else router.push(`/ventas/${sale.id}`); }}>Ver detalles</button>
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); onGenerateElectronicInvoice(sale); }}>Generar factura electrónica</button>
+                  {documentActions(() => setCommercialMenuOpen(false))}
                 </div>}
               </div>
-            ) : <button
+            ) : hasDocuments ? <CardActionsMenu open={commercialMenuOpen} onOpenChange={setCommercialMenuOpen}>
+              {reservationActions(() => setCommercialMenuOpen(false))}
+            </CardActionsMenu> : <button
               type="button"
               aria-label="Ver detalles"
               onClick={(e) => {
@@ -306,6 +357,7 @@ export default function SaleCard({
           )}
         </div>
 
+        {operational && fiscalPresentation && <div className="mb-2 text-xs text-slate-600">Factura: <span className={`inline-flex rounded-full px-2 py-0.5 ${fiscalPresentation.badge}`}>{fiscalPresentation.label}</span></div>}
         <div className="mb-3">
           <SaleFiscalSummary
             summary={sale.fiscalSummary}
@@ -333,6 +385,7 @@ export default function SaleCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (primary.run) return primary.run();
               if (onReceipt) return onReceipt(sale);
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
@@ -340,7 +393,7 @@ export default function SaleCard({
             className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-[#0B3F64] py-2.5 rounded-full font-bold text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-wider shadow-sm"
           >
             <ExternalLink className="h-3.5 w-3.5 text-[#0B3F64]" />
-            Ver factura
+            {primary.label}
           </button>
         </div>
 

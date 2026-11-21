@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-16",
+  "frontend": {
+    "passed": 194,
+    "failed": 0
+  },
+  "backend_unit": {
+    "passed": 1007,
+    "failed": 0,
+    "snapshots": 4
+  },
+  "postgres_general": {
+    "passed": 126,
+    "failed": 12,
+    "skipped": 13,
+    "skipped_reason": "slug backfill requires dedicated runner"
+  },
+  "postgres_slugs": {
+    "passed": 15,
+    "failed": 0,
+    "overlap_business_name": 2
+  },
+  "postgres_unique_combined": {
+    "passed": 139,
+    "failed": 12,
+    "skipped": 0
+  },
+  "baseline_payroll": {
+    "passed": 1,
+    "failed": 12,
+    "identical_failure_names": true,
+    "failures": [
+      "Payroll Advanced Audits (Integration) › Auditoría 1 y 2: Prima automática junio y diciembre › Debe generar el periodo de junio y validar si se crea la Prima automáticamente",
+      "Payroll Advanced Audits (Integration) › Auditoría 3, 4 y 6: Contrato > 1 año y > 2 años, y liquidación con primas pagadas › Liquidación al 31/03/2026 (Contrato > 1 año)",
+      "Payroll Advanced Audits (Integration) › Auditoría 5: Snapshot completo › Debe contener los usedParameters mínimos requeridos en el PayrollRun",
+      "Payroll Advanced Audits (Integration) › Auditoría: Contratos inactivos no deben ser calculados › Debe rechazar el calculo de nomina para un contrato inactivo",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 1. Create BIWEEKLY contract with monthly payroll period",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 10. Editing contract with POSTED payroll must block critical fields",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 2. Creates one full SALARY_PAYMENT for a biweekly PayrollRun",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 3. Mark Payment 1 as PAID and verify persistence",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 4. Retiro del empleado día 16 con Pago 1 PAID & 5. Liquidacion debe descontar Pago 1 & 6. Prima descontada",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 7. Posting payroll must not mark payments as paid",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 8. Mark payment PAID must not recalculate payroll",
+      "Payroll Payments & Settlements (Integration) › Payroll Payments Requirements › 9. Accounting must generate PAYROLL_PAYMENT entry only if mappings exist"
+    ]
+  },
+  "browser": {
+    "engine": "Chrome headless, isolated contexts",
+    "viewports": [
+      "1280x900",
+      "390x844"
+    ],
+    "real_page": "/venta",
+    "api": "mocked localhost",
+    "verified": [
+      "calendar and previous year",
+      "public past disabled",
+      "VOLVER sends zero creations",
+      "explicit confirmation",
+      "lost response retries same payload/key",
+      "no runtime errors or horizontal overflow"
+    ]
+  },
+  "builds": {
+    "backend": "PASS",
+    "frontend_webpack": "PASS",
+    "frontend_turbopack": "isolated junction outside root rejected"
+  },
+  "raw_evidence": {
+    "final": "C:\\Users\\Viko\\AppData\\Local\\Temp\\retrospective-6cbe234a5a1a4469af4a83ee088ef84f",
+    "baseline": "C:\\Users\\Viko\\AppData\\Local\\Temp\\retrospective-e3c9e73a81004e5ebbd2d16198ea189d",
+    "frontend": "C:\\Users\\Viko\\AppData\\Local\\Temp\\sactec-retro-frontend-final.log",
+    "browser": "C:\\Users\\Viko\\AppData\\Local\\Temp\\sactec-retro-browser",
+    "slugs": "C:\\Users\\Viko\\AppData\\Local\\Temp\\sactec-retro-slugs.log"
+  }
+}

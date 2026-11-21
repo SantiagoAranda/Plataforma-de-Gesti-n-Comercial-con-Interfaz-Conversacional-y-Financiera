@@ -5,6 +5,8 @@ import ReservationSlotPicker from "./ReservationSlotPicker";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import { CheckCircle, Copy, Check } from "lucide-react";
 import { formatLocalDateKey } from "@/src/lib/datetime";
+import { reservationLink } from "@/src/lib/sales/reservationCancelUi";
+import { bookingAttemptKey, bookingErrorMessage, type BookingAttempt } from "@/src/lib/reservations/bookingAttempt";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -59,6 +61,8 @@ export default function ReservationDrawer({
   // ── Estados de éxito ──────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const bookingAttempt = useRef<BookingAttempt>(null);
   const [appointmentLink, setAppointmentLink] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -90,6 +94,8 @@ export default function ReservationDrawer({
     setSelectedStartMinute(null);
     setFullName(initialFullNameRef.current);
     setIsSuccess(false);
+    setSubmitError(null);
+    bookingAttempt.current = null;
     setAppointmentLink("");
     setCopied(false);
     setIsSubmitting(false);
@@ -137,33 +143,43 @@ export default function ReservationDrawer({
     const startMinute = h * 60 + m;
     const endMinute = startMinute + (serviceDurationMinutes ?? 60);
 
+    const payload = {
+      itemId,
+      customerName: fullName.trim(),
+      customerWhatsapp: whatsapp,
+      date: formatLocalDateKey(date),
+      startMinute,
+      endMinute,
+    };
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch(`${API_URL}/public/${businessSlug}/reserve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itemId,
-          customerName: fullName.trim(),
-          customerWhatsapp: whatsapp,
-          date: formatLocalDateKey(date),
-          startMinute,
-          endMinute,
-        }),
+        // Same attempt => same key: a retry after an uncertain failure never books twice.
+        body: JSON.stringify({ ...payload, idempotencyKey: bookingAttemptKey(bookingAttempt, payload) }),
       });
 
-      if (!res.ok) throw new Error("Error creating reservation");
+      if (!res.ok) {
+        // A decided answer (e.g. slot taken, key expired) ends this attempt.
+        if (res.status === 409) bookingAttempt.current = null;
+        setSubmitError(await bookingErrorMessage(res, "No se pudo crear la reserva. Intentá nuevamente."));
+        return;
+      }
+      bookingAttempt.current = null;
 
       const reservation = await res.json();
       const id = reservation?.id ?? "";
       const link = id
-        ? `${window.location.origin}/reserva/${id}`
+        ? reservationLink(window.location.origin, id, reservation?.publicToken)
         : `${window.location.origin}/reserva`;
 
       setAppointmentLink(link);
       setIsSuccess(true);
     } catch {
-      // Dejamos el manejo de error al padre si existe; si no, solo cerramos
+      // Network uncertainty: keep the attempt key so retrying cannot create a duplicate.
+      setSubmitError("No pudimos confirmar la reserva por un problema de conexión. Volvé a intentar: no se duplicará.");
     } finally {
       setIsSubmitting(false);
     }
@@ -304,6 +320,10 @@ export default function ReservationDrawer({
                 Entendido
               </button>
             ) : (
+              <>
+              {submitError && (
+                <p role="alert" className="mb-3 text-center text-sm text-rose-600">{submitError}</p>
+              )}
               <button
                 disabled={!canConfirm || isSubmitting}
                 onClick={handleConfirm}
@@ -316,6 +336,7 @@ export default function ReservationDrawer({
               >
                 {isSubmitting ? "Confirmando..." : "Confirmar Reserva"}
               </button>
+              </>
             )}
           </div>
         </div>

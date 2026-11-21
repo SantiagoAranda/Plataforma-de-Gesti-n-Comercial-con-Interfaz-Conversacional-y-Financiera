@@ -162,9 +162,9 @@ test('public metadata queries backend without owner storage or stale metadata ca
   let publicName = 'TecnoGmaes';
   answer = async () => ({ name: publicName, slug: 'original', logoUrl: null });
   const props = () => ({ params: Promise.resolve({ slug: 'original' }) });
-  assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGmaes');
+  assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGmaes | SACTEC');
   publicName = 'TecnoGames';
-  assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGames');
+  assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGames | SACTEC');
   assert.equal(localStorage.getItem('businessName'), null);
   assert.equal(requests.length, 2);
   assert.ok(requests.every(r => r.cache === 'no-store' && new URL(r.url).pathname === '/public/original/resolve'));
@@ -274,4 +274,55 @@ test('store page redirects historical slugs with 308 to the current slug, keepin
   const items = requests.filter(r => new URL(r.url).pathname.endsWith('/items')).map(r => new URL(r.url).pathname);
   assert.deepEqual(items, ['/public/vigente/items', '/public/sin-ruta/items']);
   assert.equal(requests.length, resolves.length + items.length);
+});
+
+test('store share metadata uses the business name, canonical URL and only a public https logo', async () => {
+  setup();
+  let logoUrl = 'https://assets.sactec.dev/logos/tecno.png';
+  answer = async () => ({ slug: 'tecno', name: '  Tecno\n  Games ', logoUrl });
+  const meta = async () => generateMetadata({ params: Promise.resolve({ slug: 'tecno' }) });
+  const m = await meta();
+  assert.equal(m.title.absolute, 'Tecno Games | SACTEC');
+  assert.equal(m.description, 'Explorá los productos y servicios de Tecno Games en SACTEC.');
+  assert.deepEqual(
+    { ...m.openGraph, images: undefined },
+    { type: 'website', siteName: 'SACTEC', title: 'Tecno Games | SACTEC', description: m.description, url: 'https://tienda.test/tienda/tecno', images: undefined },
+  );
+  assert.equal(m.openGraph.images[0].url, logoUrl);
+  assert.deepEqual(m.twitter, { card: 'summary_large_image', title: m.openGraph.title, description: m.description, images: [logoUrl] });
+  assert.equal(m.alternates.canonical, 'https://tienda.test/tienda/tecno');
+  // No logo, or one that is not a public https URL, falls back to the SACTEC image.
+  for (logoUrl of [null, '', '/uploads/logo.png', 'http://assets.sactec.dev/a.png', 'https://localhost/a.png', 'javascript:alert(1)']) {
+    const fallback = await meta();
+    assert.equal(fallback.openGraph.images[0].url, '/brand/sactec-og.png', String(logoUrl));
+    assert.deepEqual(fallback.twitter.images, ['/brand/sactec-og.png']);
+  }
+});
+
+test('missing store keeps the plain fallback metadata', async () => {
+  setup();
+  answer = async () => new Response(JSON.stringify({ message: 'Tienda no encontrada' }), { status: 404 });
+  assert.deepEqual(await generateMetadata({ params: Promise.resolve({ slug: 'nada' }) }), { title: { absolute: 'Tienda' } });
+});
+
+test('reservation metadata names only the business and is never indexed', async () => {
+  setup();
+  const reservationPage = require('../../app/reserva/[id]/page.tsx');
+  answer = async () => ({
+    id: 'res-secret-1', status: 'CONFIRMED', customerName: 'Ana Pérez', customerWhatsapp: '3001234567', note: 'privado',
+    date: '2026-11-20T00:00:00.000Z', startMinute: 600, endMinute: 660,
+    item: { id: 'i', name: 'Corte', price: 1, durationMinutes: 60 },
+    business: { id: 'b', name: 'Barbería Sol', slug: 'sol', phoneWhatsapp: '3009999999' },
+  });
+  const m = await reservationPage.generateMetadata({ params: Promise.resolve({ id: 'res-secret-1' }) });
+  assert.equal(m.title.absolute, 'Reservas en Barbería Sol | SACTEC');
+  assert.equal(m.openGraph.description, 'Consultá los servicios disponibles y gestioná tus reservas en Barbería Sol.');
+  assert.deepEqual(m.robots, { index: false, follow: false });
+  assert.equal(m.openGraph.url, undefined);
+  assert.equal(m.openGraph.images[0].url, '/brand/sactec-og.png');
+  const text = JSON.stringify(m);
+  for (const secret of ['Ana', '3001234567', '3009999999', 'res-secret-1', 'privado', 'Corte']) assert.ok(!text.includes(secret), secret);
+  answer = async () => new Response('{}', { status: 404 });
+  const missing = await reservationPage.generateMetadata({ params: Promise.resolve({ id: 'x' }) });
+  assert.deepEqual(missing.robots, { index: false, follow: false });
 });

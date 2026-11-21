@@ -1,3 +1,5 @@
+import { UseInterceptors } from '@nestjs/common';
+import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Body,
   Controller,
@@ -22,6 +24,7 @@ import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+@UseInterceptors(ReservationConflictInterceptor)
 @Controller('sales')
 export class SalesController {
   constructor(private salesService: SalesService) {}
@@ -64,6 +67,11 @@ export class SalesController {
     return this.salesService.generateElectronicInvoice(req.user.businessId, saleId);
   }
 
+  @Get('manual-service-times')
+  getManualServiceTimes(@Req() req: any, @Query('itemId') itemId: string, @Query('date') date: string, @Query('durationMinutes') duration?: string) {
+    return this.salesService.getManualServiceTimes(req.user.businessId, itemId, date, duration);
+  }
+
   @Get(':id/reservation-availability')
   getReservationAvailability(
     @Req() req: any,
@@ -88,8 +96,9 @@ export class SalesController {
     @Req() req: any,
     @Param('id') id: string,
     @Query('sourceType') sourceType?: any,
+    @Body() body?: { reason?: unknown },
   ) {
-    return this.salesService.cancel(req.user.businessId, id, sourceType);
+    return this.salesService.cancel(req.user.businessId, id, sourceType, body?.reason);
   }
 
   @Post(':id/reverse')
