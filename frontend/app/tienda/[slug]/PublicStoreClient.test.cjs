@@ -38,6 +38,22 @@ function setup(items=[visible,hidden],fiscal=false){
 }
 async function flush(fn=()=>{}){await act(async()=>{fn();await new Promise(resolve=>setTimeout(resolve,10));});}
 afterEach(()=>{cleanup();});
+test('F1.5 no-agenda service joins products and hidden prices in the WhatsApp cart',async()=>{
+ setup([visible,{...hidden,type:'SERVICE',requiresAppointment:false}]);await flush(()=>render(h(Store,{initialData:structuredClone(catalog)})));
+ assert.equal(screen.queryByRole('button',{name:/Reservar/}),null);
+ await flush(()=>{for(const button of screen.getAllByRole('button',{name:'Agregar al carrito'}))fireEvent.click(button);});
+ await flush(()=>fireEvent.click(screen.getByRole('button',{name:'Carrito'})));
+ await flush(()=>fireEvent.click(screen.getByRole('button',{name:'Consultar por WhatsApp'})));
+ assert.equal(opened.length,1);assert.equal(requests.filter(r=>r.options.method==='POST').length,0);
+ const text=new URL(opened[0]).searchParams.get('text');assert.ok(text.includes('A medida')&&text.includes('Visible'));
+});
+test('F1.5 changing a cart service back to appointment blocks its stale commercial line',async()=>{
+ setup([{...hidden,type:'SERVICE',requiresAppointment:false}]);await flush(()=>render(h(Store,{initialData:structuredClone(catalog)})));
+ await flush(()=>fireEvent.click(screen.getByRole('button',{name:'Agregar al carrito'})));
+ await flush(()=>fireEvent.click(screen.getByRole('button',{name:'Carrito'})));
+ catalog.data[0].requiresAppointment=true;await flush(()=>window.dispatchEvent(new Event('focus')));
+ assert.ok(screen.getByText('No disponible'));assert.ok(screen.getByRole('button',{name:'Consultar por WhatsApp'}).disabled);
+});
 test("mixed cart survives service filter and WhatsApp creates no commercial requests",async()=>{
  setup();await flush(()=>render(h(Store,{initialData:structuredClone(catalog)})));
  await flush(()=>{for(const button of screen.getAllByRole("button",{name:"Agregar al carrito"}))fireEvent.click(button);});

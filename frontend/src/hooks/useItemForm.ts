@@ -83,6 +83,8 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
     "closed" | "create" | "edit"
   >("closed");
   const [type, setType] = useState<ItemType>("PRODUCT");
+  const [requiresAppointment, setRequiresAppointment] = useState(true);
+  const [allowWalkIn, setAllowWalkIn] = useState(false);
   const [name, setName] = useState("");
   const [badgeText1, setBadgeText1] = useState("");
   const [badgeColor1, setBadgeColor1] = useState("#ef4444");
@@ -146,6 +148,8 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
     setCurrentDayIndex(0);
     setFormErrors({});
     setType("PRODUCT");
+    setRequiresAppointment(true);
+    setAllowWalkIn(false);
     setInventoryMode("NONE");
     setSaleConcept("GOODS");
     setEditingItem(null);
@@ -194,6 +198,8 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
 
     setCatalog(catalogDraft(item));
     setType(item.type);
+    setRequiresAppointment(item.requiresAppointment ?? true);
+    setAllowWalkIn(item.allowWalkIn ?? true);
     setSaleConcept(item.saleConcept || (item.type === "SERVICE" ? "SERVICES" : "GOODS"));
     const nextInventoryMode: ItemInventoryMode =
       item.type === "SERVICE" ? "NONE" : (item.inventoryMode ?? "NONE");
@@ -305,7 +311,7 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
   const handleSend = async () => {
     if (isSubmitting || isLoadingDetail || submitInFlightRef.current) return;
 
-    if (type === "SERVICE") {
+    if (type === "SERVICE" && requiresAppointment) {
       const hasOverlap = week.some((day) => {
         if (!day.active || day.ranges.length !== 2) return false;
         const m1s = timeToMinutes(day.ranges[0].start);
@@ -324,7 +330,9 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || !Number.isFinite(Number(price)) || Number(price) <= 0) {
-      errors.price = "El precio debe ser mayor a 0";
+      errors.price = type === "SERVICE" && !requiresAppointment
+        ? "Para guardar, activa Requiere agenda e introduce el precio interno en Precio. Después puedes desactivarla nuevamente."
+        : "El precio debe ser mayor a 0";
     }
     const parsedImpoconsumoRate = impoconsumoRatePercent
       ? Number(impoconsumoRatePercent.replace(",", "."))
@@ -346,9 +354,9 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
     let finalDuration = duration;
     if (type === "SERVICE") {
       const exactDuration = durationInMinutes(durationInput, durationMinutesInput);
-      if (exactDuration === null) errors.duration = "Ingresa horas y minutos enteros (0–59), mínimo 5 minutos.";
-      else finalDuration = exactDuration;
-      if (!week.some((d) => d.active && d.ranges.length > 0)) {
+      if (requiresAppointment && (exactDuration === null || exactDuration > 1440)) errors.duration = "Ingresa horas y minutos enteros (0–59), entre 5 y 1440 minutos.";
+      if (exactDuration !== null) finalDuration = exactDuration;
+      if (requiresAppointment && !week.some((d) => d.active && d.ranges.length > 0)) {
         errors.schedule = "Selecciona al menos un día con horario";
       }
     }
@@ -400,6 +408,8 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
       const body = {
         ...catalogDraft(catalog),
         type,
+        requiresAppointment: type === "SERVICE" && requiresAppointment,
+        allowWalkIn: type === "SERVICE" && allowWalkIn,
         name,
         price: parseFloat(price),
         saleConcept,
@@ -411,7 +421,10 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
             ? parsedImpoconsumoRate / 100
             : null,
         description: description.trim() || null,
-        durationMinutes: type === "SERVICE" ? finalDuration : null,
+        durationMinutes: type === "SERVICE"
+          ? (!requiresAppointment && editingItem && editingItem.durationMinutes == null &&
+              durationInput === "1" && durationMinutesInput === "0" ? undefined : finalDuration)
+          : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
@@ -497,7 +510,7 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
       resetForm();
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al guardar", type: "error" });
+      setToast({ message: err instanceof Error ? err.message : "Error al guardar", type: "error" });
     } finally {
       submitInFlightRef.current = false;
       setIsSubmitting(false);
@@ -506,6 +519,7 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
 
 
   const contentProps = {
+    requiresAppointment, setRequiresAppointment,
     tab, setTab, catalog, setCatalog, catalogError,
     priceValue: price && Number.isFinite(Number(price)) ? Number(price) : null,
     durationMinutesInput, setDurationMinutesInput,
@@ -548,5 +562,5 @@ export function useItemForm(onSaved: (item: Item) => void, setToast: (notice: No
     saleConcept: saleConcept,
     setSaleConcept: setSaleConcept,
   };
-  return { composerMode, setComposerMode, type, setType, name, setName, badgeText1, setBadgeText1, badgeColor1, setBadgeColor1, badgeText2, setBadgeText2, badgeColor2, setBadgeColor2, price, setPrice, priceDisplay, setPriceDisplay, appliesImpoconsumo, setAppliesImpoconsumo, impoconsumoRatePercent, setImpoconsumoRatePercent, description, setDescription, existingImages, setExistingImages, newImages, setNewImages, removedImageIds, setRemovedImageIds, imageError, setImageError, pendingImageFile, setPendingImageFile, createdItemId, setCreatedItemId, imageUploadFailed, setImageUploadFailed, duration, setDuration, durationInput, setDurationInput, week, setWeek, currentDayIndex, setCurrentDayIndex, isSubmitting, setIsSubmitting, formErrors, setFormErrors, editingItem, setEditingItem, inventoryMode, setInventoryMode, saleConcept, setSaleConcept, resetForm, handleToggleComposer, handleStartEdit, handleAddImages, handleRemoveExistingImage, handleRemoveNewImage, handleSend, contentProps, isLoadingDetail, catalog, setCatalog, catalogError, durationMinutesInput, setDurationMinutesInput };
+  return { requiresAppointment, setRequiresAppointment, allowWalkIn, composerMode, setComposerMode, type, setType, name, setName, badgeText1, setBadgeText1, badgeColor1, setBadgeColor1, badgeText2, setBadgeText2, badgeColor2, setBadgeColor2, price, setPrice, priceDisplay, setPriceDisplay, appliesImpoconsumo, setAppliesImpoconsumo, impoconsumoRatePercent, setImpoconsumoRatePercent, description, setDescription, existingImages, setExistingImages, newImages, setNewImages, removedImageIds, setRemovedImageIds, imageError, setImageError, pendingImageFile, setPendingImageFile, createdItemId, setCreatedItemId, imageUploadFailed, setImageUploadFailed, duration, setDuration, durationInput, setDurationInput, week, setWeek, currentDayIndex, setCurrentDayIndex, isSubmitting, setIsSubmitting, formErrors, setFormErrors, editingItem, setEditingItem, inventoryMode, setInventoryMode, saleConcept, setSaleConcept, resetForm, handleToggleComposer, handleStartEdit, handleAddImages, handleRemoveExistingImage, handleRemoveNewImage, handleSend, contentProps, isLoadingDetail, catalog, setCatalog, catalogError, durationMinutesInput, setDurationMinutesInput };
 }

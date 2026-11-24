@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertUnscheduledItems, lockItemConfiguration, requiresAppointment } from '../items/item-service-policy';
 import {
   BadRequestException,
   ForbiddenException,
@@ -697,9 +698,6 @@ export class SalesService {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    if (!options?.isManual) {
-      this.ensureSingleItemType(dbItems);
-    }
     const itemById = new Map(dbItems.map((item) => [item.id, item]));
     const resolved = await Promise.all(
       inputs.map(async (input) => {
@@ -963,12 +961,12 @@ export class SalesService {
     }
 
     const isManual = (dto.origin ?? 'MANUAL') !== 'PUBLIC_STORE';
-    const itemType = isManual ? null : this.ensureSingleItemType(itemsFromDb);
+    const appointmentItems = itemsFromDb.filter(requiresAppointment);
     const manualScheduledServiceItem =
       isManual &&
       dto.items.length === 1 &&
       itemsFromDb.length === 1 &&
-      itemsFromDb[0].type === 'SERVICE' &&
+      requiresAppointment(itemsFromDb[0]) &&
       Boolean(dto.scheduledAt)
         ? itemsFromDb[0]
         : null;
@@ -982,9 +980,16 @@ export class SalesService {
       throw new BadRequestException({ code: 'RETROSPECTIVE_REQUIRES_MANUAL_SERVICE', message: 'Solo una atención manual con fecha y hora puede registrarse como ya prestada.' });
     }
 
+    if (appointmentItems.length && (dto.items.length !== 1 || itemsFromDb.length !== 1))
+      throw new BadRequestException(SCHEDULED_SERVICE_ALONE);
+    if (appointmentItems.length && !dto.scheduledAt)
+      throw new BadRequestException('scheduledAt is required for service sales');
+    if (!appointmentItems.length && dto.scheduledAt)
+      throw new BadRequestException('Los ítems sin agenda no admiten fecha ni horario.');
+
     // Scheduled-service validation runs inside the write transaction (reserveSlot).
     // BIFURCACIÓN SEGÚN TIPO
-    if (!isManual && itemType === 'SERVICE') {
+    if (!isManual && appointmentItems.length) {
       if (dto.items.length !== 1) {
         throw new BadRequestException(
           'Services with appointment must be registered separately',
@@ -1090,6 +1095,9 @@ export class SalesService {
             }
           }
           logTiming('tx.start', Date.now());
+          if (!manualScheduledServiceItem) {
+            await this.assertCommercialItems(tx, businessId, uniqueItemIds);
+          }
           const orderWriteStartedAt = Date.now();
           const createdOrder = await tx.order.create({
             data: {
@@ -1473,6 +1481,7 @@ export class SalesService {
         businessId,
         id: { in: orderIds },
       },
+      include: { item: { select: { requiresAppointment: true } } },
     });
     return new Map(
       reservations.map((reservation) => [reservation.id, reservation]),
@@ -2090,21 +2099,11 @@ export class SalesService {
     const resolved = await this.resolveOrderLines(businessId, [dto], {
       isManual: order.origin === 'MANUAL',
     });
-    const item = await this.prisma.item.findFirstOrThrow({
-      where: { id: dto.itemId, businessId },
-    });
-
-    if (order.origin !== 'MANUAL' && order.items.length > 0) {
-      const existingType = this.ensureSingleItemType(order.items);
-      if (item.type !== existingType) {
-        throw new BadRequestException(
-          `Order already contains ${existingType.toLowerCase()}s and cannot mix item types`,
-        );
-      }
-    }
-
     return this.prisma.$transaction(async (tx) => {
       await this.assertEditableInTransaction(tx, businessId, order.id);
+      const mirror = await tx.reservation.findFirst({ where: { id: order.id, businessId, status: { not: 'CANCELLED' } } });
+      if (mirror) throw new BadRequestException(SCHEDULED_SERVICE_ALONE);
+      await this.assertCommercialItems(tx, businessId, [dto.itemId]);
       const created = await tx.orderItem.create({
         data: {
           ...resolved.lines[0],
@@ -2693,6 +2692,15 @@ export class SalesService {
     return this.prisma
       .$transaction(async (tx) => {
         await this.assertEditableInTransaction(tx, businessId, orderId);
+        if (resolvedItems && !dto.scheduledAt) {
+          // Preserve v2's existing controlled mirror detach/revival workflow.
+          // Pure commercial orders never acquire a reservation through this path.
+          const historicalMirror = await tx.reservation.findFirst({ where: { id: orderId, businessId } });
+          if (!historicalMirror) {
+            const newIds = resolvedItems.lines.map(line => line.itemId).filter(id => !order.items.some(line => line.itemId === id));
+            await this.assertCommercialItems(tx, businessId, newIds);
+          }
+        }
         await tx.order.update({
           where: { id: orderId },
           data: {
@@ -2740,6 +2748,7 @@ export class SalesService {
             businessId,
             mirrorId,
           );
+          if (!existingMirror) throw new BadRequestException('Una orden sin reserva no se transforma en una cita. Crea la reserva por separado.');
           const { dateOnly, startMinute } = this.parseScheduledAt(
             dto.scheduledAt,
           );
@@ -2972,26 +2981,13 @@ export class SalesService {
     };
   }
 
-  private ensureSingleItemType(
-    items: Array<{
-      type?: 'PRODUCT' | 'SERVICE';
-      itemTypeSnapshot?: 'PRODUCT' | 'SERVICE';
-    }>,
-  ) {
-    const types = new Set(
-      items.map((i) => i.type ?? i.itemTypeSnapshot).filter(Boolean),
-    );
-
-    if (types.size === 0) {
-      throw new BadRequestException(
-        'Order must contain at least one item type',
-      );
-    }
-
-    if (types.size > 1) {
-      throw new BadRequestException('Order cannot mix products and services');
-    }
-
-    return Array.from(types)[0];
+  /** New commercial lines are serialized with modality changes, not repriced here. */
+  private async assertCommercialItems(tx: Prisma.TransactionClient, businessId: string, ids: string[]) {
+    if (!ids.length) return;
+    await lockItemConfiguration(tx, businessId, ids);
+    const items = await tx.item.findMany({ where: { businessId, id: { in: [...new Set(ids)] }, status: 'ACTIVE' } });
+    if (items.length !== new Set(ids).size) throw new BadRequestException('One or more items are invalid');
+    assertUnscheduledItems(items);
   }
+
 }

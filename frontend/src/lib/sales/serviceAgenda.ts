@@ -4,20 +4,22 @@ export type AgendaLine = {
   itemId: string;
   itemType?: OperationalItemType | null;
   durationMin?: number | null;
+  requiresAppointment?: boolean;
 };
 
 export function resolveAgendaLineType(
   line: AgendaLine,
-  catalog: ReadonlyArray<{ id: string; type: OperationalItemType }>,
+  catalog: ReadonlyArray<{ id: string; type: OperationalItemType; requiresAppointment?: boolean }>,
 ) {
   return line.itemType ?? catalog.find((item) => item.id === line.itemId)?.type;
 }
 
 export function requiresServiceAgenda(
   line: AgendaLine | undefined,
-  catalog: ReadonlyArray<{ id: string; type: OperationalItemType }>,
+  catalog: ReadonlyArray<{ id: string; type: OperationalItemType; requiresAppointment?: boolean }>,
 ) {
-  return !!line && resolveAgendaLineType(line, catalog) === "SERVICE";
+  return !!line && resolveAgendaLineType(line, catalog) === "SERVICE" &&
+    (line.requiresAppointment ?? catalog.find(item => item.id === line.itemId)?.requiresAppointment) !== false;
 }
 
 export function buildLocalScheduledAt(

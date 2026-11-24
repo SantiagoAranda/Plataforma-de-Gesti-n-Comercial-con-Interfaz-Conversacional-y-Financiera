@@ -77,7 +77,9 @@ describe('ItemsService', () => {
 
     function setup(existing: any = existingService) {
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([]),
         item: {
+          findFirst: jest.fn().mockResolvedValue(existing),
           update: jest.fn().mockResolvedValue({}),
           findUniqueOrThrow: jest.fn().mockResolvedValue({
             ...existing,
@@ -154,11 +156,11 @@ describe('ItemsService', () => {
     });
 
     it('scopes updates to the caller business', async () => {
-      const { service, prisma } = setup(null);
+      const { service, tx } = setup(null);
       await expect(
         service.update('other-business', 'svc-1', { brand: 'X' } as any),
       ).rejects.toThrow('Item not found');
-      expect(prisma.item.findFirst).toHaveBeenCalledWith({
+      expect(tx.item.findFirst).toHaveBeenCalledWith({
         where: { id: 'svc-1', businessId: 'other-business' },
       });
     });

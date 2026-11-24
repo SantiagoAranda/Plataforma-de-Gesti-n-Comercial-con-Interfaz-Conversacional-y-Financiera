@@ -109,6 +109,9 @@ export type Item = {
   badgeColor?: string | null;
   description?: string;
   durationMinutes?: number;
+  requiresAppointment?: boolean;
+  /** Prepared for F1.8; not enforced by F1.5. */
+  allowWalkIn?: boolean;
   inventoryMode?: ItemInventoryMode | null;
   minStock?: number | string;
   sellability?: ItemSellability;
@@ -152,7 +155,7 @@ export type ItemCatalogAttributes = {
 /** Item as returned by /public/:slug/items: the internal price may be hidden. */
 export type PublicCatalogItem = Omit<
   Item,
-  "price" | "barcode" | "quotationDescription" | "includeInQuotation" | "visibleInCatalog" | "optionGroups"
+  "price" | "barcode" | "quotationDescription" | "includeInQuotation" | "visibleInCatalog" | "optionGroups" | "allowWalkIn"
 > & {
   price: number | null;
   optionGroups?: Array<Omit<PublicItemOptionGroup, "options"> & {

@@ -1,4 +1,5 @@
 "use client";
+import { requiresItemAppointment } from "@/src/lib/itemAppointment";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
@@ -15,6 +16,7 @@ import { publicPrice, publicPriceLabel } from "@/src/lib/publicCatalog";
 type ItemType = "PRODUCT" | "SERVICE";
 
 type Item = {
+  requiresAppointment?: boolean;
   id: string;
   name: string;
   price: number | null;
@@ -174,8 +176,10 @@ export default function PublicStorePage() {
                 key={item.id}
                 item={item}
                 onAction={() => {
-                  if (item.type === "SERVICE") {
+                  if (requiresItemAppointment(item)) {
                     setSelectedService(item);
+                  } else {
+                    window.location.assign(`/tienda/${encodeURIComponent(token)}?item=${encodeURIComponent(item.id)}`);
                   }
                 }}
               />

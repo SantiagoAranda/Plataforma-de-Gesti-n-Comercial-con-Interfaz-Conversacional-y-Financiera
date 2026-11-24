@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Building2, Check, ChevronDown, FileText, ShoppingBag, Trash2, Plus, User, X, Search, Send } from "lucide-react";
+import { requiresItemAppointment } from "@/src/lib/itemAppointment";
 import { cn } from "@/src/lib/utils";
 import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
@@ -66,6 +67,7 @@ type EditableItem = {
 };
 
 type BusinessItem = {
+  requiresAppointment?: boolean;
   id: string;
   name: string;
   price: number;
@@ -320,8 +322,9 @@ export default function SalesChatComposer({
       itemType: resolveAgendaLineType(first, businessItems),
     };
   }, [items, businessItems]);
-  const agendaItemType = agendaItem?.itemType;
-  const requiresAgenda = requiresServiceAgenda(agendaItem, businessItems);
+  // Existing orders are never turned into bookings by a catalog modality change.
+  const requiresAgenda = mode === "edit" ? Boolean(sale?.scheduledAt) : requiresServiceAgenda(agendaItem, businessItems);
+  const canReschedule = mode !== "edit" || Boolean(sale?.allowedActions?.includes("reschedule"));
   const selectedScheduledAt = buildLocalScheduledAt(scheduledDate, selectedStartMinute);
   const configuredDuration = mode === "create"
     ? businessItems.find(item => item.id === agendaItem?.itemId)?.durationMinutes ?? agendaItem?.durationMin
@@ -335,11 +338,11 @@ export default function SalesChatComposer({
   const isBookingForm = mode === "create" ? requiresAgenda : sale?.commercialPolicyVersion === 2;
 
   useEffect(() => {
-    if (agendaItemType === "PRODUCT") {
+    if (!requiresAgenda) {
       setScheduledDate(null);
       setSelectedStartMinute(null);
     }
-  }, [agendaItemType]);
+  }, [requiresAgenda]);
 
   useEffect(() => {
     if (!newItem.itemId) return;
@@ -491,14 +494,14 @@ export default function SalesChatComposer({
     if (!bi) return;
     setFormError(null);
 
-    if (bi.type === "SERVICE" && items.length > 0) {
+    if (requiresItemAppointment(bi) && items.length > 0) {
       setFormError("Para registrar servicios con turno, cargá la cita por separado.");
       return;
     }
 
     if (items.length === 0) {
       setType(bi.type === "SERVICE" ? "SERVICIO" : "PRODUCTO");
-    } else if (type === "SERVICIO") {
+    } else if (requiresAgenda) {
       setFormError("Para registrar servicios con turno, cargá la cita por separado.");
       return;
     }
@@ -598,7 +601,7 @@ export default function SalesChatComposer({
           ...sale!,
           customerName: cleanedName || "Consumidor final",
           customerWhatsapp: cleanedWhatsapp ?? null,
-          type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
+          type: items.some(it => resolveAgendaLineType(it, businessItems) === "SERVICE") ? "SERVICIO" : "PRODUCTO",
           status: status as any,
           paymentMethod: paymentMethod || "CASH",
           fiscalContext: buyerFiscalContext,
@@ -620,7 +623,7 @@ export default function SalesChatComposer({
         await onSave({
           customerName: cleanedName || undefined,
           customerWhatsapp: cleanedWhatsapp,
-          type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
+          type: items.some(it => resolveAgendaLineType(it, businessItems) === "SERVICE") ? "SERVICIO" : "PRODUCTO",
           status: isBookingForm ? "PENDIENTE" : status,
           paymentMethod: paymentMethod || "CASH",
           ...agendaPayload,
@@ -655,7 +658,9 @@ export default function SalesChatComposer({
                     value={newItem.itemId}
                     onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
                     options={businessItems.filter(bi =>
-                      items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                      items.length === 0 ? true : requiresAgenda
+                        ? bi.id === agendaItem?.itemId
+                        : !requiresServiceAgenda({ itemId: bi.id }, businessItems)
                     )}
                     placeholder={businessItems.length === 0 ? "Sin ítems disponibles." : "Buscar ítem..."}
                   />
@@ -796,7 +801,7 @@ export default function SalesChatComposer({
         </div>
 
         {/* 2. Agenda de citas si es servicio */}
-        {requiresAgenda && agendaItem && (
+        {requiresAgenda && agendaItem && canReschedule && (
           <div className="flex flex-col gap-3 p-4 rounded-2xl border border-emerald-50 bg-emerald-50/20">
             <div className="rounded-xl bg-white p-3 border border-emerald-100 shadow-sm">
               <span className="text-xs font-semibold text-emerald-700">

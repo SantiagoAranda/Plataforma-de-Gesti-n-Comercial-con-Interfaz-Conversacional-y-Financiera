@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Weekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertAppointmentService, lockItemConfiguration } from '../items/item-service-policy';
 
 type Db = PrismaService | Prisma.TransactionClient;
 
@@ -281,6 +282,8 @@ export class AvailabilityService {
 
   /** Authenticated Sales only: historical starts are suggestions, not current availability. */
   async getManualSalesSlots(query: SlotQuery & { date: Date }, historicalDuration = query.durationMinutes) {
+    const item = await this.prisma.item.findFirst({ where: { id: query.itemId, businessId: query.businessId }, select: { requiresAppointment: true } });
+    if (item?.requiresAppointment === false) return [];
     const today = this.businessToday(query.businessId);
     const future = await this.getSlots(query);
     const slots = future.map(time => ({ time, kind: 'AVAILABLE' as 'AVAILABLE' | 'HISTORICAL' }));
@@ -389,14 +392,16 @@ export class AvailabilityService {
    * same transaction that writes the reservation; the lock is held until commit.
    */
   async reserveSlot(tx: Prisma.TransactionClient, input: ReserveSlotInput) {
+    await lockItemConfiguration(tx, input.businessId, [input.itemId]);
     const item = await tx.item.findFirst({
       where: { id: input.itemId, businessId: input.businessId },
-      select: { id: true, type: true, status: true, durationMinutes: true },
+      select: { id: true, type: true, status: true, durationMinutes: true, requiresAppointment: true },
     });
     if (!item) throw new NotFoundException(RESERVATION_ERRORS.serviceNotFound);
     if (item.type !== 'SERVICE') {
       throw new BadRequestException(RESERVATION_ERRORS.notAService);
     }
+    assertAppointmentService(item);
     if (item.status !== 'ACTIVE' && !input.allowInactiveService) {
       throw new BadRequestException(RESERVATION_ERRORS.serviceInactive);
     }
@@ -551,6 +556,8 @@ export class AvailabilityService {
     to: Date,
     db: Db,
   ): Promise<Map<string, string[]>> {
+    const item = await db.item.findFirst({ where: { id: query.itemId, businessId: query.businessId }, select: { requiresAppointment: true } });
+    if (item?.requiresAppointment === false) return new Map();
     const today = this.businessToday(query.businessId);
     const range = await this.loadRange(db, query, from, to);
 

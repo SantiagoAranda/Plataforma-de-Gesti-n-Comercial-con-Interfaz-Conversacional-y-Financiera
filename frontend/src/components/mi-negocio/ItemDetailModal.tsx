@@ -1,4 +1,5 @@
 "use client";
+import { requiresItemAppointment } from "@/src/lib/itemAppointment";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -20,6 +21,7 @@ interface Item {
   description?: string;
   type?: "PRODUCT" | "SERVICE";
   durationMinutes?: number;
+  requiresAppointment?: boolean;
   schedule?: any[];
   createdAt?: string;
   badges?: Array<{ text: string; color: string }> | null;
@@ -112,7 +114,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open && item?.id && item.type === "SERVICE") {
+    if (open && item?.id && requiresItemAppointment(item)) {
       if (!item.schedule || item.schedule.length === 0) {
         setLoading(true);
         api<Item>(`/items/${item.id}`)
@@ -135,8 +137,8 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
   const imageCount = images.length;
   const badges = getItemBadges(displayItem);
   
-  const activeDays = displayItem.type === "SERVICE" ? formatActiveDaysCompact(displayItem.schedule) : "";
-  const groupedSchedule = displayItem.type === "SERVICE" ? groupScheduleByDay(displayItem.schedule) : [];
+  const activeDays = requiresItemAppointment(displayItem) ? formatActiveDaysCompact(displayItem.schedule) : "";
+  const groupedSchedule = requiresItemAppointment(displayItem) ? groupScheduleByDay(displayItem.schedule) : [];
   const inventory = inventoryMeta(displayItem, recipeLineCount);
 
   // ─── ACTION FOOTER ────────────────────────────────────────────────────────
@@ -248,7 +250,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
         </div>
 
         {/* ESTIMATED DURATION — SERVICES ONLY */}
-        {displayItem.type === "SERVICE" && displayItem.durationMinutes ? (
+        {requiresItemAppointment(displayItem) && displayItem.durationMinutes ? (
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-3">
             <div className="flex items-center gap-2">
               <Clock size={14} className="text-neutral-400" />

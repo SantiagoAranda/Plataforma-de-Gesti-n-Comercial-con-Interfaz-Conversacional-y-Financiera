@@ -8,11 +8,13 @@ const {
 } = require("./serviceAgenda.ts");
 
 const catalog = [
+  { id: "noagenda", type: "SERVICE", requiresAppointment: false },
   { id: "product-1", type: "PRODUCT" },
   { id: "service-1", type: "SERVICE" },
 ];
 
 test("agenda is controlled by the operational item type, not a fiscal concept", () => {
+  assert.equal(requiresServiceAgenda({ itemId: "noagenda" }, catalog), false);
   assert.equal(requiresServiceAgenda({ itemId: "product-1" }, catalog), false);
   assert.equal(requiresServiceAgenda({ itemId: "service-1" }, catalog), true);
   assert.equal(

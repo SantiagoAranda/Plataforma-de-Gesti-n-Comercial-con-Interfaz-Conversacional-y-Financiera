@@ -189,6 +189,24 @@ describe('Reservas: validación transaccional y concurrencia (PostgreSQL)', () =
     });
   }, 60000);
 
+  it('F1.5 mixed commercial confirmation is concurrent and idempotent without a reservation', async () => {
+    const product = await prisma.item.create({ data: { businessId, name: 'F15 product', type: 'PRODUCT', price: 100, requiresAppointment: false, allowWalkIn: false } });
+    const service = await prisma.item.create({ data: { businessId, name: 'F15 no agenda', type: 'SERVICE', price: 200, durationMinutes: 95, requiresAppointment: false, allowWalkIn: false } });
+    const order = await sales.create(businessId, { origin: 'MANUAL', type: 'SERVICIO', status: 'PENDIENTE', items: [{ itemId: product.id, quantity: 2 }, { itemId: service.id, quantity: 1 }] });
+    const results = await Promise.allSettled(Array.from({ length: 4 }, () => sales.confirmOrder(businessId, order.id)));
+    expect(results.some(result => result.status === 'fulfilled')).toBe(true);
+    const stored = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+    expect(stored.status).toBe('COMPLETED');
+    expect(Number(stored.total)).toBe(400);
+    expect(stored.items.map(line => line.itemTypeSnapshot).sort()).toEqual(['PRODUCT', 'SERVICE']);
+    expect(await prisma.reservation.findUnique({ where: { id: order.id } })).toBeNull();
+    const effects = await prisma.accountingMovement.findMany({ where: { businessId, originId: order.id }, orderBy: { id: 'asc' } });
+    expect(effects.length).toBeGreaterThan(0);
+    expect(effects.filter(effect => effect.nature === 'DEBIT').reduce((sum, effect) => sum + Number(effect.amount), 0)).toBe(400);
+    await sales.confirmOrder(businessId, order.id);
+    expect(await prisma.accountingMovement.findMany({ where: { businessId, originId: order.id }, orderBy: { id: 'asc' } })).toEqual(effects);
+  });
+
   afterAll(async () => {
     if (businessId) {
       await prisma.inventoryMovement.deleteMany({ where: { businessId } });

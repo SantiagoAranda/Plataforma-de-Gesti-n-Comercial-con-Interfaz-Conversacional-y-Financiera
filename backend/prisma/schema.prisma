@@ -458,6 +458,10 @@ model Item {
   badges     Json?
 
   durationMinutes Int?
+  // Legacy clients retain scheduling; the new form explicitly sends allowWalkIn=false.
+  requiresAppointment Boolean @default(true)
+  // Prepared for F1.8. Not an authorization rule until its consumers are implemented.
+  allowWalkIn Boolean @default(true)
 
   // F1.1 catalog attributes. Public visibility is independent of `status`;
   // hiding the price never touches `price` (internal price stays mandatory).

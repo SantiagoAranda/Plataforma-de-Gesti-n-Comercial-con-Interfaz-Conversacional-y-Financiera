@@ -246,7 +246,33 @@ test("creates a service with exact duration and only existing API fields",async(
  act(()=>{result.current.setType("SERVICE");result.current.setName("Tratamiento");result.current.setPrice("55000");result.current.setSaleConcept("SERVICES");result.current.setDurationInput("1");result.current.setDurationMinutesInput("35");});
  await act(async()=>result.current.handleSend());
  assert.equal(body.type,"SERVICE");assert.equal(body.durationMinutes,95);assert.equal(body.inventoryMode,"NONE");assert.ok(body.schedule.length>0);
- for(const key of ["requiresAppointment","allowWalkIn","sharedSchedule","holidays","status"])assert.equal(body[key],undefined);
+  assert.equal(body.requiresAppointment,true);assert.equal(body.allowWalkIn,false);
+ for(const key of ["sharedSchedule","holidays","status"])assert.equal(body[key],undefined);
+});
+test('F1.5 no-agenda creation requires an explicit internal price without availability',async()=>{
+ let body;apiHandler=async(_url,options)=>{body=JSON.parse(options.body);return {...item,...body};};
+ const {result}=mount();
+ act(()=>{result.current.setType('SERVICE');result.current.setName('Sin cita');result.current.setRequiresAppointment(false);result.current.setWeek(result.current.week.map(day=>({...day,active:false})));});
+ await act(async()=>result.current.handleSend());
+ assert.equal(body,undefined);assert.match(result.current.formErrors.price,/precio interno/);
+ act(()=>result.current.setPrice('42000'));
+ await act(async()=>result.current.handleSend());
+ assert.equal(body.requiresAppointment,false);assert.equal(body.allowWalkIn,false);assert.equal(body.price,42000);assert.deepEqual(body.schedule,[]);
+});
+test('F1.5 toggling preserves legacy policy, exact duration, price, schedule and catalog fields',async()=>{
+ const service={...item,type:'SERVICE',inventoryMode:'NONE',durationMinutes:95,schedule:[{weekday:'MON',startMinute:480,endMinute:720}]};let body;
+ apiHandler=async(_url,options)=>{if(options?.method==='PATCH')body=JSON.parse(options.body);return structuredClone(service);};
+ const {result}=mount();await act(async()=>result.current.handleStartEdit(service));
+ assert.equal(result.current.allowWalkIn,true);
+ act(()=>result.current.setRequiresAppointment(false));act(()=>result.current.setRequiresAppointment(true));act(()=>result.current.setRequiresAppointment(false));
+ await act(async()=>result.current.handleSend());
+ assert.equal(body.requiresAppointment,false);assert.equal(body.allowWalkIn,true);assert.equal(body.price,service.price);assert.equal(body.durationMinutes,95);assert.deepEqual(body.schedule,service.schedule);assert.equal(body.publishWithoutPrice,true);
+});
+test('F1.5 editing nullable duration without opening agenda does not invent a duration',async()=>{
+ const service={...item,type:'SERVICE',inventoryMode:'NONE',requiresAppointment:false,durationMinutes:null,schedule:[]};let body;
+ apiHandler=async(_url,options)=>{if(options?.method==='PATCH')body=JSON.parse(options.body);return structuredClone(service);};
+ const {result}=mount();await act(async()=>result.current.handleStartEdit(service));await act(async()=>result.current.handleSend());
+ assert.equal(body.durationMinutes,undefined);assert.equal(body.requiresAppointment,false);
 });
 test("quotation text remains persisted when inclusion is turned off",async()=>{
  let body;apiHandler=async(url,options)=>{if(options?.method==="PATCH")body=JSON.parse(options.body);return structuredClone(item);};
@@ -324,6 +350,20 @@ function CategoryHarness({start,recentItems}){
    React.createElement("button",{onClick:form.handleSend},"Guardar prueba"));
 }
 const storageWrites=()=>{const calls=[];const original=window.localStorage.setItem;window.localStorage.setItem=function(...a){calls.push(a);return original.apply(this,a);};return {calls,restore:()=>{window.localStorage.setItem=original;}};};
+test('F1.5 switch hides and restores price and weekly controls without a functional F1.8 control',async()=>{
+ const start={...item,type:'SERVICE',inventoryMode:'NONE',durationMinutes:95,schedule:[{weekday:'MON',startMinute:480,endMinute:720}]};
+ apiHandler=async()=>structuredClone(start);
+ render(React.createElement(CategoryHarness,{start}));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Abrir edición'})));
+ const toggle=screen.getByRole('switch',{name:'Requiere agenda'});
+ assert.equal(toggle.getAttribute('aria-checked'),'true');assert.ok(screen.getByText('Disponibilidad semanal'));
+ fireEvent.click(toggle);
+ assert.equal(toggle.getAttribute('aria-checked'),'false');assert.ok(screen.getByText('Servicio sin cita'));
+ assert.ok(screen.getByText('No se pedirá fecha ni horario al cliente y no ocupa un horario'));
+ assert.equal(screen.queryByText('Precio'),null);assert.equal(screen.queryByText('Disponibilidad semanal'),null);
+ assert.equal(screen.queryByRole('switch',{name:'Añadir sin cita previa'}),null);
+ fireEvent.click(toggle);assert.ok(screen.getByText('Precio'));assert.ok(screen.getByText('Disponibilidad semanal'));
+});
 test("suggestion is offered in the modal, never applied by itself, and works for products and services",async()=>{
  for(const start of [item,{...item,type:'SERVICE',inventoryMode:'NONE',saleConcept:'SERVICES',appliesImpoconsumo:false,impoconsumoRate:null,durationMinutes:30,schedule:[{weekday:'MON',startMinute:480,endMinute:720}]}]){
   const isService=start.type==='SERVICE';const name=isService?"Corte de cabello":"Cerveza artesanal";

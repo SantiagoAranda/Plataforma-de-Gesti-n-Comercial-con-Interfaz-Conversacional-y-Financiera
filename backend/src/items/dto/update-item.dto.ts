@@ -28,6 +28,14 @@ class BadgeInput {
 }
 
 export class UpdateItemDto extends ItemCatalogFieldsDto {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  requiresAppointment?: boolean;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  allowWalkIn?: boolean;
+
   @IsOptional()
   @IsEnum(ItemType)
   type?: ItemType;

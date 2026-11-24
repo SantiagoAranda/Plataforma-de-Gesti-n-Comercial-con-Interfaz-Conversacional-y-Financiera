@@ -14,6 +14,7 @@ export const publicItemPrice = (item: {
 }) => (isPriceHidden(item) ? null : Number(item.price));
 
 const INTERNAL_ONLY_FIELDS = [
+  'allowWalkIn',
   'barcode',
   'quotationDescription',
   'includeInQuotation',

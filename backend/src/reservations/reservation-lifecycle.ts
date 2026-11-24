@@ -222,6 +222,11 @@ export function actionPolicy(sourceType: 'ORDER' | 'RESERVATION', record: any, r
     if (reservation) evaluate('complete', completionBlock(reservation, record, evidence, now));
     if (v2Mirror) evaluate('noShow', noShowBlock(reservation, record, evidence, now));
   }
+  if (reservation?.item?.requiresAppointment === false) {
+    const index = allowedActions.indexOf('reschedule');
+    if (index !== -1) allowedActions.splice(index, 1);
+    blockedActions.reschedule = block('SERVICE_WITHOUT_APPOINTMENT', 'El servicio ya no requiere agenda. Su reserva histórica conserva el horario original.');
+  }
   return { allowedActions, blockedActions };
 }
 /** Stable transport for transaction races; never retry a user's decision automatically. */

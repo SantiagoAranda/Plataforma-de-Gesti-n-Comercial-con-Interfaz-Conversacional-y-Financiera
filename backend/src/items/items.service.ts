@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +15,8 @@ import { AddItemImageDto } from './dto/add-item-image.dto';
 import { CreateItemDto } from './dto/create-item.dto';
 import { ItemCatalogFieldsDto } from './dto/item-catalog-fields.dto';
 import { optionalText, resolveCategoryFields } from './item-catalog';
+import { assertReservableSchedule, lockItemConfiguration, requiresAppointment, servicePolicyData } from './item-service-policy';
+import { reservationReached } from '../reservations/reservation-lifecycle';
 
 @Injectable()
 export class ItemsService {
@@ -85,6 +88,13 @@ export class ItemsService {
   async create(businessId: string, dto: CreateItemDto) {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const policy = servicePolicyData(dto.type, dto);
+        if (requiresAppointment({ type: dto.type, ...policy })) {
+          const windows = dto.schedule?.length ? dto.schedule : await tx.serviceScheduleWindow.findMany({
+            where: { businessId, itemId: null },
+          });
+          assertReservableSchedule(dto.durationMinutes, windows);
+        }
         console.log(`[ItemsService] Creating item: "${dto.name}"`);
         console.log(
           `[ItemsService] Name Hex: ${Buffer.from(dto.name).toString('hex')}`,
@@ -123,6 +133,7 @@ export class ItemsService {
             id: dto.id,
             businessId,
             type: dto.type,
+            ...policy,
             inventoryMode: this.resolveInventoryMode(
               dto.type,
               dto.inventoryMode,
@@ -274,6 +285,8 @@ export class ItemsService {
           inventoryMode: true,
           description: true,
           durationMinutes: true,
+          requiresAppointment: true,
+          allowWalkIn: true,
           badgeText: true,
           badgeColor: true,
           badges: true,
@@ -413,73 +426,91 @@ export class ItemsService {
   }
 
   async update(businessId: string, id: string, dto: UpdateItemDto) {
-    const existing = await this.prisma.item.findFirst({
-      where: { id, businessId },
-    });
-
-    if (!existing) throw new NotFoundException('Item not found');
-
-    const nextType = dto.type ?? existing.type;
-    // Validate before opening the transaction.
     const catalogData = this.catalogData(dto);
-
-    const nextInventoryMode = this.resolveInventoryMode(
-      nextType,
-      dto.inventoryMode ?? existing.inventoryMode,
-    );
-
-    const nextDuration =
-      nextType === 'SERVICE'
-        ? (dto.durationMinutes ?? existing.durationMinutes ?? 0)
-        : null;
-
-    if (
-      nextType === 'SERVICE' &&
-      (nextDuration === null || nextDuration === undefined)
-    ) {
-      throw new BadRequestException('durationMinutes is required for SERVICE');
-    }
-
-    const hasBadgeTextField = dto.badgeText !== undefined;
-    const hasBadgeColorField = dto.badgeColor !== undefined;
-    const hasBadgesField = (dto as any).badges !== undefined;
-
-    let nextBadgeText: string | null | undefined = undefined;
-    let nextBadgeColor: string | null | undefined = undefined;
-    let nextBadges: any = undefined;
-
-    if (hasBadgeTextField) {
-      const cleanedText = (dto.badgeText ?? '').trim();
-      const finalText = cleanedText ? cleanedText : null;
-
-      const cleanedColor = hasBadgeColorField
-        ? (dto.badgeColor ?? '').trim()
-        : (existing.badgeColor ?? '').trim();
-
-      nextBadgeText = finalText;
-      nextBadgeColor = finalText ? cleanedColor || '#ef4444' : null;
-    } else if (hasBadgeColorField) {
-      const cleanedColor = (dto.badgeColor ?? '').trim();
-      const hasExistingText = (existing.badgeText ?? '').trim().length > 0;
-
-      nextBadgeColor = hasExistingText
-        ? cleanedColor || '#ef4444'
-        : cleanedColor || null;
-    }
-
-    if (hasBadgesField) {
-      const cleaned = this.normalizeBadges((dto as any).badges);
-      nextBadges = cleaned.length ? cleaned : null;
-
-      nextBadgeText = cleaned[0]?.text ?? null;
-      nextBadgeColor = cleaned[0]?.color ?? null;
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      await lockItemConfiguration(tx, businessId, [id], true);
+      const existing = await tx.item.findFirst({
+        where: { id, businessId },
+      });
+
+      if (!existing) throw new NotFoundException('Item not found');
+
+      const nextType = dto.type ?? existing.type;
+      const policy = servicePolicyData(nextType, dto, existing);
+      if (requiresAppointment(existing) && !requiresAppointment({ type: nextType, ...policy })) {
+        const open = await tx.reservation.findMany({
+          where: { businessId, itemId: id, status: { in: ['PENDING', 'CONFIRMED'] } },
+          select: { date: true, endMinute: true },
+        });
+        const now = new Date();
+        if (open.some(r => !reservationReached(r, r.endMinute, now)))
+          throw new ConflictException({ code: 'SERVICE_HAS_OPEN_APPOINTMENTS',
+            message: 'Hay reservas futuras o atenciones en curso. Resuélvelas antes de desactivar la agenda.' });
+      }
+
+      const nextInventoryMode = this.resolveInventoryMode(
+        nextType,
+        dto.inventoryMode ?? existing.inventoryMode,
+      );
+
+      const nextDuration =
+        nextType === 'SERVICE'
+          ? (dto.durationMinutes ?? existing.durationMinutes)
+          : null;
+
+      if (
+        requiresAppointment({ type: nextType, ...policy }) &&
+        (nextDuration === null || nextDuration === undefined)
+      ) {
+        throw new BadRequestException('durationMinutes is required for SERVICE');
+      }
+
+      const hasBadgeTextField = dto.badgeText !== undefined;
+      const hasBadgeColorField = dto.badgeColor !== undefined;
+      const hasBadgesField = (dto as any).badges !== undefined;
+
+      let nextBadgeText: string | null | undefined = undefined;
+      let nextBadgeColor: string | null | undefined = undefined;
+      let nextBadges: any = undefined;
+
+      if (hasBadgeTextField) {
+        const cleanedText = (dto.badgeText ?? '').trim();
+        const finalText = cleanedText ? cleanedText : null;
+
+        const cleanedColor = hasBadgeColorField
+          ? (dto.badgeColor ?? '').trim()
+          : (existing.badgeColor ?? '').trim();
+
+        nextBadgeText = finalText;
+        nextBadgeColor = finalText ? cleanedColor || '#ef4444' : null;
+      } else if (hasBadgeColorField) {
+        const cleanedColor = (dto.badgeColor ?? '').trim();
+        const hasExistingText = (existing.badgeText ?? '').trim().length > 0;
+
+        nextBadgeColor = hasExistingText
+          ? cleanedColor || '#ef4444'
+          : cleanedColor || null;
+      }
+
+      if (hasBadgesField) {
+        const cleaned = this.normalizeBadges((dto as any).badges);
+        nextBadges = cleaned.length ? cleaned : null;
+
+        nextBadgeText = cleaned[0]?.text ?? null;
+        nextBadgeColor = cleaned[0]?.color ?? null;
+      }
+
+      if (requiresAppointment({ type: nextType, ...policy }) &&
+        (!requiresAppointment(existing) || dto.durationMinutes !== undefined || dto.schedule !== undefined)) {
+        const specific = dto.schedule ?? await tx.serviceScheduleWindow.findMany({ where: { businessId, itemId: id } });
+        const windows = specific.length ? specific : await tx.serviceScheduleWindow.findMany({ where: { businessId, itemId: null } });
+        assertReservableSchedule(nextDuration, windows);
+      }
       await tx.item.update({
         where: { id },
         data: {
           type: dto.type,
+          ...policy,
           inventoryMode:
             dto.inventoryMode === undefined && dto.type === undefined
               ? undefined

@@ -1,4 +1,5 @@
 "use client";
+import { requiresItemAppointment } from "@/src/lib/itemAppointment";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
@@ -150,6 +151,7 @@ type PublicOptionGroup = {
 };
 
 type Item = {
+  requiresAppointment?: boolean;
   id: string;
   name: string;
   price: number | null;
@@ -640,7 +642,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
       }
       const current = (old: Item | null) => old ? nextItems.find((item) => item.id === old.id) ?? null : null;
       setSelectedProduct(current);
-      setSelectedService(current);
+      setSelectedService(old => { const item = current(old); return item && requiresItemAppointment(item) ? item : null; });
       setCustomizingProduct(current);
       setBusinessName(data.business?.name ?? "");
       setBusinessWhatsapp(data.business?.phoneWhatsapp ?? "");
@@ -691,7 +693,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     if (!item) return;
     const timer = window.setTimeout(() => {
       openedDeepLink.current = targetId;
-      if (item.type === "SERVICE") setSelectedService(item);
+      if (requiresItemAppointment(item)) setSelectedService(item);
       else setSelectedProduct(item);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -932,7 +934,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
           ...item,
           cartKey: cartLineKey(line),
           quantity: line.quantity,
-          unavailable: !current || invalidSelection,
+          unavailable: !current || invalidSelection || requiresItemAppointment(item),
           price: publicLinePrice(item.price, selectedOptions.map((option) => option.priceDelta)),
           basePrice: item.price,
           optionSelections: line.optionSelections,
@@ -1393,14 +1395,14 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
                   item={item}
                   preview={preview}
                   onOpen={() =>
-                    item.type === "SERVICE"
+                    requiresItemAppointment(item)
                       ? setSelectedProduct(item)
                       : (item.optionGroups?.length ?? 0) > 0
                         ? openCustomizationOrAdd(item)
                         : setSelectedProduct(item)
                   }
                   onPlus={() =>
-                    item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
+                    requiresItemAppointment(item) ? setSelectedService(item) : openCustomizationOrAdd(item)
                   }
                 />
               ))}
@@ -1806,7 +1808,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
               toast("Modo administrador: las compras/reservas están deshabilitadas");
               return;
             }
-            if (selectedProduct.type === "SERVICE") {
+            if (requiresItemAppointment(selectedProduct)) {
               const itemToReserve = selectedProduct;
               closeProductDetail();
               setSelectedService(itemToReserve);
@@ -2149,7 +2151,7 @@ function ProductCard({
             onPlus();
           }}
           className="absolute bottom-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-md ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
+          aria-label={requiresItemAppointment(item) ? "Reservar" : "Agregar al carrito"}
         >
           <Plus className="h-5 w-5" />
         </button>
@@ -2159,7 +2161,8 @@ function ProductCard({
         <div className="truncate text-[15px] font-semibold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
-        {item.type === "SERVICE" && item.durationMinutes && (
+        {item.type === "SERVICE" && !requiresItemAppointment(item) && <p className="text-xs text-slate-500">Servicio sin cita</p>}
+        {requiresItemAppointment(item) && item.durationMinutes && (
           <div className="mt-[2px] text-[11px] font-medium text-neutral-500 flex items-center gap-1">
             <span>🕒</span>
             <span>{item.durationMinutes / 60} h</span>
@@ -2341,7 +2344,7 @@ function ProductDetailOverlay({
                           </div>
                         )}
                     </div>
-                    {item.type === "SERVICE" && item.durationMinutes && (
+                    {requiresItemAppointment(item) && item.durationMinutes && (
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                         <span>🕒 Duración: {item.durationMinutes / 60} h</span>
                       </div>
@@ -2354,7 +2357,7 @@ function ProductDetailOverlay({
                     onClick={onPrimaryAction}
                     className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {item.type === "SERVICE" ? (
+                    {requiresItemAppointment(item) ? (
                       <>
                         Reservar
                         <ArrowRight className="h-4 w-4" />
@@ -2710,7 +2713,7 @@ function ReelLikeProductView({
                   </div>
                 )}
             </div>
-            {item.type === "SERVICE" && item.durationMinutes && (
+            {requiresItemAppointment(item) && item.durationMinutes && (
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mt-1">
                 <span>🕒 Duración: {item.durationMinutes / 60} h</span>
               </div>
@@ -2723,7 +2726,7 @@ function ReelLikeProductView({
             onClick={onPrimaryAction}
             className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {item.type === "SERVICE" ? (
+            {requiresItemAppointment(item) ? (
               <>
                 Reservar
                 <ArrowRight className="h-4 w-4" />

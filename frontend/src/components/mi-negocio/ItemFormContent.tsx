@@ -218,6 +218,8 @@ function TimeSelectAMPM({
 }
 
 interface ItemFormContentProps {
+  requiresAppointment: boolean;
+  setRequiresAppointment: (value: boolean) => void;
   tab: "data" | "tax" | "qr";
   setTab: (value: "data" | "tax" | "qr") => void;
   catalog: ItemCatalogAttributes;
@@ -529,7 +531,25 @@ export function ItemFormContent(props: ItemFormContentProps) {
       </div>
 
       {/* PRECIO + DURACION */}
-      <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
+      {type === "SERVICE" && <section className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <span id="requires-appointment-label" className="text-sm font-semibold text-neutral-800">Requiere agenda</span>
+          <button type="button" role="switch" aria-labelledby="requires-appointment-label"
+            aria-checked={props.requiresAppointment}
+            onClick={() => { props.setRequiresAppointment(!props.requiresAppointment); setFormErrors(p => ({ ...p, schedule: undefined, duration: undefined })); }}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B3F64] ${props.requiresAppointment ? "bg-[#0B3F64]" : "bg-neutral-300"}`}>
+            <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${props.requiresAppointment ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </div>
+        {!props.requiresAppointment && <div className="space-y-1">
+          <p className="text-sm font-medium text-neutral-800">Servicio sin cita</p>
+          <p className="text-xs text-neutral-600">No se pedirá fecha ni horario al cliente y no ocupa un horario</p>
+          {formErrors.price && <p role="alert" className="text-xs text-red-600">{formErrors.price}</p>}
+        </div>}
+        {/* F1.8 will add its persisted authorization control here, separated by a border.
+            Do not expose a switch until Sales consumes allowWalkIn. */}
+      </section>}
+      {(type !== "SERVICE" || props.requiresAppointment) && <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="space-y-2">
           <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio</label>
           <div className={`flex items-center rounded-2xl border px-4 h-[48px] shadow-sm transition ${formErrors.price ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white"}`}>
@@ -569,6 +589,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
         </div>}
       </div>
 
+      }
       {/* INVENTARIO (PRODUCT ONLY) */}
       {type === "PRODUCT" && (
         <div className="space-y-2">
@@ -630,7 +651,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
       )}
 
       {/* HORARIOS (SERVICE ONLY) */}
-      {type === "SERVICE" && (
+      {type === "SERVICE" && props.requiresAppointment && (
         <div className="space-y-4">
           <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Disponibilidad semanal</label>
           <div className="flex justify-between gap-1">

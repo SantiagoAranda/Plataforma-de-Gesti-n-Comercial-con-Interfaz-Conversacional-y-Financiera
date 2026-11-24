@@ -10,6 +10,7 @@ import {
   Min,
   Matches,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 
 import { Transform, Type } from 'class-transformer';
@@ -39,6 +40,14 @@ export class ScheduleInput {
 }
 
 export class CreateItemDto extends ItemCatalogFieldsDto {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  requiresAppointment?: boolean;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  allowWalkIn?: boolean;
+
   @IsOptional()
   @IsUUID()
   id?: string;
@@ -58,6 +67,7 @@ export class CreateItemDto extends ItemCatalogFieldsDto {
   name!: string;
 
   @IsNumber()
+  @Min(0)
   price!: number;
 
   @IsOptional()

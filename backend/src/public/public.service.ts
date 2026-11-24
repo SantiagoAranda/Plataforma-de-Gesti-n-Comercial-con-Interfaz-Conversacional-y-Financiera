@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { assertUnscheduledItems } from '../items/item-service-policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
@@ -321,6 +322,7 @@ export class PublicService {
     tx: Prisma.TransactionClient,
     businessId: string,
     itemIds: string[],
+    commercialOrder = false,
   ) {
     const ids = [...new Set(itemIds)];
     if (!ids.length) return;
@@ -330,9 +332,11 @@ export class PublicService {
         status: string;
         visibleInCatalog: boolean;
         publishWithoutPrice: boolean;
+        type: string;
+        requiresAppointment: boolean;
       }>
     >(Prisma.sql`
-      SELECT id, status, "visibleInCatalog", "publishWithoutPrice"
+      SELECT id, status, "visibleInCatalog", "publishWithoutPrice", type, "requiresAppointment"
       FROM "Item"
       WHERE "businessId" = ${businessId} AND id IN (${Prisma.join(ids)})
       ORDER BY id FOR SHARE
@@ -344,6 +348,7 @@ export class PublicService {
       throw new BadRequestException('Invalid items');
     }
     assertNoHiddenPrices(items);
+    if (commercialOrder) assertUnscheduledItems(items);
   }
 
   async calculateTaxPreview(slug: string, dto: TaxPreviewDto) {
@@ -1066,6 +1071,7 @@ export class PublicService {
       throw new BadRequestException('Invalid items');
     // Cart may hold price-on-request lines; a direct order cannot (WhatsApp / quotation instead).
     assertNoHiddenPrices(dbItems);
+    assertUnscheduledItems(dbItems);
     const dbItemById = new Map(dbItems.map((item) => [item.id, item]));
 
     const visibleCustomizationNotes: string[] = [];
@@ -1212,7 +1218,7 @@ export class PublicService {
     };
     try {
       const createOrder = async (db: Prisma.TransactionClient) => {
-        await this.assertPublicPricedItems(db, business.id, uniqueItemIds);
+        await this.assertPublicPricedItems(db, business.id, uniqueItemIds, true);
         return db.order.create({
           data: {
             businessId: business.id,

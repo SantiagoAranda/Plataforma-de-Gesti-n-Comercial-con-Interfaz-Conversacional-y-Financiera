@@ -33,7 +33,7 @@ export function consultationUrl(phone: string, business: string, lines: Readonly
   const digits = phone.replace(/\D/g, "");
   if (!/^[1-9]\d{7,14}$/.test(digits) || lines.length === 0) return null;
   const message = [
-    `Hola, ${business}. Quisiera consultar estos productos:`,
+    `Hola, ${business}. Quisiera consultar estos productos y servicios:`,
     ...lines.map((line) => [
       `• ${line.quantity} × ${line.name}`,
       line.selectedOptionNames?.length ? `  Opciones: ${line.selectedOptionNames.join(", ")}` : "",

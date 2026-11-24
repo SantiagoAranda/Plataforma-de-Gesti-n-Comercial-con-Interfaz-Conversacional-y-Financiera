@@ -29,7 +29,10 @@ function withLifecycleMocks(prisma: any) {
   extend(prisma);
   if (prisma.$transaction) {
     const original = prisma.$transaction;
-    prisma.$transaction = jest.fn((fn: any, ...options: any[]) => original((tx: any) => fn(extend(tx)), ...options));
+    prisma.$transaction = jest.fn((fn: any, ...options: any[]) => original((tx: any) => {
+      tx.item ??= prisma.item;
+      return fn(extend(tx));
+    }, ...options));
   }
   return prisma;
 }

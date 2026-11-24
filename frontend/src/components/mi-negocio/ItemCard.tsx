@@ -1,4 +1,5 @@
 "use client";
+import { requiresItemAppointment } from "@/src/lib/itemAppointment";
 
 import { memo, useState } from "react";
 import { api } from "@/src/lib/api";
@@ -57,7 +58,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
   const currentImages = hydratedImages ?? item.images ?? [];
   const imageCount = item._count?.images ?? currentImages.length;
 
-  const activeDays = item.type === "SERVICE" ? formatActiveDaysCompact(item.schedule) : "";
+  const activeDays = requiresItemAppointment(item) ? formatActiveDaysCompact(item.schedule) : "";
   const inventory = inventoryMeta(item, recipeLineCount);
 
   const inventoryAction = (() => {
@@ -217,7 +218,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
           </div>
 
           {/* DURATION (IF SERVICE) */}
-          {item.type === "SERVICE" && (
+          {requiresItemAppointment(item) && (
             <div className="flex items-center justify-between gap-1.5 w-full text-[10px] font-medium">
               <div className="flex items-center gap-1.5 text-neutral-500">
                 <span>🕒</span>
@@ -273,6 +274,7 @@ export const ItemCard = memo(ItemCardComponent, (prev, next) => {
     prev.item.price === next.item.price &&
     prev.item.type === next.item.type &&
     prev.item.durationMinutes === next.item.durationMinutes &&
+    prev.item.requiresAppointment === next.item.requiresAppointment &&
     prev.item.description === next.item.description &&
     prev.item.inventoryMode === next.item.inventoryMode &&
     prev.recipeLineCount === next.recipeLineCount &&

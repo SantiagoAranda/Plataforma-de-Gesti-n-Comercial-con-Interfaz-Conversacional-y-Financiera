@@ -15,6 +15,7 @@ const React = require('react');
 const { render, screen, fireEvent, cleanup, act } = require('@testing-library/react');
 const h = React.createElement;
 const catalog = [
+  { id: 'noagenda', name: 'Servicio sin agenda QA', price: 400, type: 'SERVICE', durationMinutes: 95, requiresAppointment: false, allowWalkIn: false },
   { id: 'product', name: 'Producto QA', price: 100, type: 'PRODUCT', inventoryMode: 'NONE' },
   { id: 'service90', name: 'Servicio 90 QA', price: 300, type: 'SERVICE', durationMinutes: 90 },
   { id: 'service', name: 'Servicio QA', price: 200, type: 'SERVICE', durationMinutes: 60 },
@@ -65,6 +66,15 @@ function remove() {
   const icon = document.querySelector('.lucide-trash-2');
   assert.ok(icon, 'remove item action exists');
   fireEvent.click(icon.closest('button'));
+}
+for (const ids of [['product','noagenda'],['noagenda','product']]) {
+ test(`F1.5 commercial mixed order ${ids.join('+')} has no appointment payload`,async()=>{
+  const saved=await mount();for(const id of ids)add(id);
+  assert.equal(screen.queryByRole('button',{name:'Elegir turno QA'}),null);
+  await save();assert.equal(saved.length,1);assert.equal(saved[0].items.length,2);
+  assert.equal(saved[0].type,'SERVICIO');assert.equal(saved[0].scheduledAt,undefined);assert.equal(saved[0].serviceProvided,undefined);
+  assert.equal(saved[0].items.find(line=>line.itemId==='noagenda').unitPrice,400);
+ });
 }
 for (const [label, expected] of [['Pendiente', 'PENDIENTE'], ['Confirmado', 'CERRADO']]) {
   test(`product preserves ${label} and has no schedule`, async () => {
