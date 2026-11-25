@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   AccountingMovementOriginType,
@@ -23,12 +24,14 @@ import {
   PayrollPeriodStatus,
   PayrollSettlementStatus,
   PayrollSettlementType,
+  PayrollTerminationReason,
   Prisma,
 } from '@prisma/client';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { FeatureFlagsService } from '../common/config/feature-flags';
 import { parsePayrollAccountingMappingTemplate } from '../common/payroll/payroll-accounting-mapping-template';
 import { businessDateAtCurrentTime } from '../common/date/accounting-date';
 import { UpdateGlobalConfigDto } from './dto/update-global-config.dto';
@@ -83,6 +86,10 @@ type PreviewPayrollOptions = {
 };
 
 const PERIODIC_PAYROLL_MINIMUM = { year: 2026, month: 7 } as const;
+const TERMINATION_FLOW_REQUIRED_MESSAGE =
+  'Este contrato tiene nóminas registradas. Para retirar al empleado usá «Desvincular empleado → Finalizar contrato laboral». Para cambiar sus condiciones, creá un nuevo contrato.';
+const CONTRACT_TERMINATION_DISABLED_MESSAGE =
+  'La confirmación definitiva de desvinculaciones está bloqueada hasta resolver el riesgo contable de provisiones duplicadas. Podés simular la liquidación.';
 const DATED_OVERTIME_REQUIRED_MESSAGE =
   'Las horas extra deben registrarse como una novedad fechada del período.';
 const PERIODIC_PAYROLL_DAILY_VALIDITY_MESSAGE =
@@ -138,7 +145,14 @@ type MissingPayrollAccountingMapping = PayrollAccountingMappingRequirement & {
 export class PayrollService {
   private readonly logger = new Logger(PayrollService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    // Typed with the class (not Pick<>) so Nest emits the right injection token.
+    private readonly featureFlags: FeatureFlagsService = {
+      payrollContractTerminationEnabled: false,
+    } as FeatureFlagsService,
+  ) {}
 
   private parseYear(year: string) {
     const parsed = Number(year);
@@ -749,6 +763,22 @@ export class PayrollService {
         'Employee has an active contract. Terminate or settle the contract before inactivating.',
       );
     }
+    // Only the latest contract matters: older versions were superseded by createContract.
+    const latestContract = await this.prisma.employeeContract.findFirst({
+      where: { businessId, employeeId: id },
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+      select: { id: true },
+    });
+    if (
+      latestContract &&
+      (await this.contractNeedsTerminationFlow(
+        businessId,
+        latestContract.id,
+        this.prisma,
+      ))
+    ) {
+      throw new BadRequestException(TERMINATION_FLOW_REQUIRED_MESSAGE);
+    }
     await this.prisma.employee.update({
       where: { id },
       data: { isActive: false },
@@ -756,27 +786,135 @@ export class PayrollService {
     return { ok: true };
   }
 
-  async hardDeleteEmployee(businessId: string, id: string) {
-    await this.assertEmployeeBelongsToBusiness(businessId, id);
-    const [contracts, runs, settlements, payments] = await Promise.all([
-      this.prisma.employeeContract.count({
-        where: { businessId, employeeId: id },
-      }),
-      this.prisma.payrollRun.count({ where: { businessId, employeeId: id } }),
-      this.prisma.payrollContractSettlement.count({
-        where: { businessId, employeeId: id },
-      }),
-      this.prisma.payrollPayment.count({
-        where: { businessId, employeeId: id },
+  /** True when the contract has payroll history but no definitive settlement. */
+  private async contractNeedsTerminationFlow(
+    businessId: string,
+    contractId: string,
+    tx: PayrollTx,
+  ) {
+    const [runs, settlement] = await Promise.all([
+      tx.payrollRun.count({ where: { businessId, contractId } }),
+      tx.payrollContractSettlement.findFirst({
+        where: {
+          businessId,
+          contractId,
+          type: PayrollSettlementType.REAL_TERMINATION,
+          status: {
+            in: [
+              PayrollSettlementStatus.CALCULATED,
+              PayrollSettlementStatus.POSTED,
+            ],
+          },
+        },
+        select: { id: true },
       }),
     ]);
-    if (contracts || runs || settlements || payments) {
-      throw new BadRequestException(
-        'Employee has payroll history and cannot be hard deleted.',
+    return runs > 0 && !settlement;
+  }
+
+  /** Dependencies that make an employee record part of payroll/accounting history. */
+  private async employeeRecordDependencies(
+    businessId: string,
+    employeeId: string,
+    contractIds: string[],
+    tx: PayrollTx,
+  ) {
+    const [runs, settlements, payments, benefitPayments, events, movements] =
+      await Promise.all([
+        tx.payrollRun.count({ where: { businessId, employeeId } }),
+        tx.payrollContractSettlement.count({
+          where: { businessId, employeeId },
+        }),
+        tx.payrollPayment.count({ where: { businessId, employeeId } }),
+        tx.payrollBenefitPayment.count({ where: { businessId, employeeId } }),
+        tx.payrollEvent.count({ where: { businessId, employeeId } }),
+        // Regularization origins embed employee/contract ids in originId.
+        tx.accountingMovement.count({
+          where: {
+            businessId,
+            OR: [employeeId, ...contractIds].map((value) => ({
+              originId: { contains: value },
+            })),
+          },
+        }),
+      ]);
+    return [
+      { code: 'PAYROLL_RUNS', label: 'Nóminas', count: runs },
+      { code: 'SETTLEMENTS', label: 'Liquidaciones', count: settlements },
+      { code: 'PAYMENTS', label: 'Pagos de nómina', count: payments },
+      {
+        code: 'BENEFIT_PAYMENTS',
+        label: 'Pagos de prestaciones',
+        count: benefitPayments,
+      },
+      { code: 'PAYROLL_EVENTS', label: 'Novedades', count: events },
+      {
+        code: 'ACCOUNTING_MOVEMENTS',
+        label: 'Movimientos contables',
+        count: movements,
+      },
+    ];
+  }
+
+  /** Read-only check shown before deleting an employee registered by mistake. */
+  async getEmployeeDeletionCheck(businessId: string, id: string) {
+    const employee = await this.assertEmployeeBelongsToBusiness(businessId, id);
+    const contracts = await this.prisma.employeeContract.findMany({
+      where: { businessId, employeeId: id },
+      select: { id: true },
+    });
+    const checks = await this.employeeRecordDependencies(
+      businessId,
+      id,
+      contracts.map((contract) => contract.id),
+      this.prisma,
+    );
+    return {
+      employeeId: employee.id,
+      contractsCount: contracts.length,
+      checks,
+      canDelete: checks.every((check) => check.count === 0),
+    };
+  }
+
+  /**
+   * Deletes an employee registered by mistake together with its contracts, only
+   * when nothing references them. Row locks block concurrent inserts that point
+   * to these rows (FK KEY SHARE) until this transaction ends.
+   */
+  async deleteEmployeeRecord(businessId: string, id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Employee"
+        WHERE "id" = ${id} AND "businessId" = ${businessId}
+        FOR UPDATE`;
+      if (!locked.length) throw new NotFoundException('Employee not found');
+      const contracts = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "EmployeeContract"
+        WHERE "employeeId" = ${id} AND "businessId" = ${businessId}
+        FOR UPDATE`;
+      const checks = await this.employeeRecordDependencies(
+        businessId,
+        id,
+        contracts.map((contract) => contract.id),
+        tx,
       );
-    }
-    await this.prisma.employee.delete({ where: { id } });
-    return { ok: true };
+      const blocking = checks.filter((check) => check.count > 0);
+      if (blocking.length) {
+        throw new ConflictException({
+          code: 'EMPLOYEE_HAS_HISTORY',
+          message: `No se puede eliminar: el empleado tiene ${blocking
+            .map((check) => `${check.label.toLowerCase()} (${check.count})`)
+            .join(', ')}. Usá «Finalizar contrato laboral» para conservar el historial.`,
+          checks,
+        });
+      }
+      await tx.employeeContract.deleteMany({
+        where: { businessId, employeeId: id },
+      });
+      await tx.employee.delete({ where: { id } });
+      return { ok: true };
+    });
   }
 
   private getInstallmentsCount(
@@ -1418,6 +1556,15 @@ export class PayrollService {
       const endDate = dto.endDate
         ? this.parseDate(dto.endDate, 'endDate')
         : undefined;
+      if (
+        endDate &&
+        this.startOfUtcDay(endDate).getTime() <
+          this.startOfUtcDay(startDate).getTime()
+      ) {
+        throw new BadRequestException(
+          'La fecha de finalización no puede ser anterior a la fecha de ingreso.',
+        );
+      }
       await this.assertMinimumSalary(
         businessId,
         startDate,
@@ -1517,6 +1664,23 @@ export class PayrollService {
       const endDate = dto.endDate
         ? this.parseDate(dto.endDate, 'endDate')
         : undefined;
+      const resultingEndDate = endDate ?? existing.endDate;
+      if (
+        resultingEndDate &&
+        this.startOfUtcDay(resultingEndDate).getTime() <
+          this.startOfUtcDay(startDate).getTime()
+      ) {
+        throw new BadRequestException(
+          'La fecha de finalización no puede ser anterior a la fecha de ingreso.',
+        );
+      }
+      if (
+        dto.isActive === false &&
+        existing.isActive &&
+        (await this.contractNeedsTerminationFlow(businessId, contractId, tx))
+      ) {
+        throw new BadRequestException(TERMINATION_FLOW_REQUIRED_MESSAGE);
+      }
       const salaryMonthly = dto.salaryMonthly ?? existing.salaryMonthly;
 
       if (dto.salaryMonthly !== undefined || dto.startDate !== undefined) {
@@ -1569,6 +1733,16 @@ export class PayrollService {
       where: { id: contractId, businessId },
     });
     if (!existing) throw new NotFoundException('Contract not found');
+    if (
+      existing.isActive &&
+      (await this.contractNeedsTerminationFlow(
+        businessId,
+        contractId,
+        this.prisma,
+      ))
+    ) {
+      throw new BadRequestException(TERMINATION_FLOW_REQUIRED_MESSAGE);
+    }
 
     await this.prisma.employeeContract.update({
       where: { id: contractId },
@@ -6319,14 +6493,89 @@ export class PayrollService {
     });
   }
 
+  private assertContractTerminationEnabled() {
+    if (!this.featureFlags.payrollContractTerminationEnabled) {
+      throw new ConflictException({
+        code: 'CONTRACT_TERMINATION_DISABLED',
+        message: CONTRACT_TERMINATION_DISABLED_MESSAGE,
+      });
+    }
+  }
+
+  /** The final salary must already be processed so the employee is never dropped early. */
+  private async assertFinalPayrollCalculated(
+    businessId: string,
+    contract: { id: string; paymentCycle: PayrollPaymentCycle },
+    endDate: Date,
+    tx: PayrollTx,
+  ) {
+    const year = endDate.getUTCFullYear();
+    const month = endDate.getUTCMonth() + 1;
+    if (
+      this.payrollMonthIndex(year, month) <
+      this.payrollMonthIndex(
+        PERIODIC_PAYROLL_MINIMUM.year,
+        PERIODIC_PAYROLL_MINIMUM.month,
+      )
+    ) {
+      return;
+    }
+    const installmentNumber =
+      contract.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+        ? endDate.getUTCDate() <= 15
+          ? 1
+          : 2
+        : undefined;
+    const run = await tx.payrollRun.findFirst({
+      where: {
+        businessId,
+        contractId: contract.id,
+        period: {
+          year,
+          month,
+          paymentCycle: contract.paymentCycle,
+          ...(installmentNumber ? { installmentNumber } : {}),
+        },
+      },
+      select: { id: true },
+    });
+    if (!run) {
+      const label = `${String(month).padStart(2, '0')}/${year}${installmentNumber ? ` (quincena ${installmentNumber})` : ''}`;
+      throw new BadRequestException({
+        code: 'FINAL_PAYROLL_REQUIRED',
+        message: `Calculá la nómina de ${label} de este empleado antes de confirmar la desvinculación.`,
+      });
+    }
+  }
+
   async createContractSettlement(
     businessId: string,
     contractId: string,
     dto: CreateContractSettlementDto,
   ) {
+    this.assertContractTerminationEnabled();
     const endDate = this.parseDate(dto.endDate, 'endDate');
+    const terminationNote =
+      this.normalizeNullableText(dto.terminationNote) ?? null;
+    if (
+      dto.terminationReason === PayrollTerminationReason.OTHER &&
+      !terminationNote
+    ) {
+      throw new BadRequestException(
+        'Describí el motivo cuando seleccionás «Otro motivo».',
+      );
+    }
+    const today = this.startOfUtcDay(this.operationalPaymentDate());
+    if (this.startOfUtcDay(endDate).getTime() > today.getTime()) {
+      throw new BadRequestException({
+        code: 'TERMINATION_DATE_IN_FUTURE',
+        message:
+          'La desvinculación solo puede confirmarse a partir de la fecha de finalización. Podés simular la liquidación con fechas futuras.',
+      });
+    }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma
+      .$transaction(async (tx) => {
       const contract = await this.getContractForSettlement(
         businessId,
         contractId,
@@ -6357,6 +6606,7 @@ export class PayrollService {
       if (existing) {
         throw new ConflictException('Contract already has a real settlement');
       }
+      await this.assertFinalPayrollCalculated(businessId, contract, endDate, tx);
 
       const settlement = await this.createSettlement(
         businessId,
@@ -6374,6 +6624,11 @@ export class PayrollService {
       await tx.employeeContract.update({
         where: { id: contractId },
         data: { endDate: this.startOfUtcDay(endDate), isActive: false },
+      });
+      // Archive in the same transaction: history (runs, contracts, settlements) is kept.
+      await tx.employee.update({
+        where: { id: contract.employeeId },
+        data: { isActive: false },
       });
 
       const persisted = await tx.payrollContractSettlement.findUnique({
@@ -6398,11 +6653,20 @@ export class PayrollService {
         data: {
           status: PayrollSettlementStatus.POSTED,
           postedAt: new Date(),
+          terminationReason: dto.terminationReason,
+          terminationNote,
         },
         include: { employee: true, contract: true, lines: true },
       });
       return this.withSettlementComputedFields(posted);
-    });
+      })
+      .catch((error: unknown) => {
+        // Partial unique index: a concurrent request already settled this contract.
+        if (this.isUniqueError(error)) {
+          throw new ConflictException('Contract already has a real settlement');
+        }
+        throw error;
+      });
   }
 
   async listContractSettlements(
@@ -6536,6 +6800,7 @@ export class PayrollService {
   }
 
   async postContractSettlement(businessId: string, id: string) {
+    this.assertContractTerminationEnabled();
     return this.prisma.$transaction(async (tx) => {
       const settlement = await tx.payrollContractSettlement.findFirst({
         where: { id, businessId },

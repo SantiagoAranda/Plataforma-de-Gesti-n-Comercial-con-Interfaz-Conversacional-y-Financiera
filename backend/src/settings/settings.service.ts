@@ -253,6 +253,8 @@ export class SettingsService {
       simpleRegimeTaxModuleEnabled:
         this.featureFlags.simpleRegimeTaxModuleEnabled,
       simpleRegimeEnabled: this.featureFlags.simpleRegimeEnabled,
+      payrollContractTerminationEnabled:
+        this.featureFlags.payrollContractTerminationEnabled === true,
     };
   }
 

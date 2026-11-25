@@ -1370,6 +1370,15 @@ enum PayrollSettlementStatus {
   CANCELLED
 }
 
+/// Informative only: never changes settlement amounts or concepts.
+enum PayrollTerminationReason {
+  CONTRACT_EXPIRATION
+  VOLUNTARY_RESIGNATION
+  EMPLOYER_TERMINATION
+  MUTUAL_AGREEMENT
+  OTHER
+}
+
 enum PayrollWithholdingStatus {
   DISABLED_FOR_FUTURE_UPDATE
   ENABLED
@@ -1940,6 +1949,9 @@ model PayrollContractSettlement {
 
   usedParameters Json
 
+  terminationReason PayrollTerminationReason?
+  terminationNote   String?
+
   calculatedAt DateTime  @default(now())
   postedAt     DateTime?
 
@@ -1950,6 +1962,9 @@ model PayrollContractSettlement {
   lines           PayrollContractSettlementLine[]
   benefitPayments PayrollBenefitPayment[]
 
+  // Partial unique index PayrollContractSettlement_real_termination_contract_key
+  // (one CALCULATED/POSTED REAL_TERMINATION per contract) lives in raw SQL:
+  // migration 20261124120000_payroll_termination_reason_and_unique_settlement.
   @@index([businessId, employeeId])
   @@index([businessId, status])
 }

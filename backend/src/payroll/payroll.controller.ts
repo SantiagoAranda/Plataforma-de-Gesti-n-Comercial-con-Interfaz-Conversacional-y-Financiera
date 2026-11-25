@@ -179,10 +179,19 @@ export class PayrollController {
     return this.payrollService.deleteEmployee(this.getBusinessId(req), id);
   }
 
+  @Get('employees/:id/deletion-check')
+  @Roles('BUSINESS')
+  getEmployeeDeletionCheck(@Req() req: any, @Param('id') id: string) {
+    return this.payrollService.getEmployeeDeletionCheck(
+      this.getBusinessId(req),
+      id,
+    );
+  }
+
   @Delete('employees/:id/hard')
   @Roles('BUSINESS')
   hardDeleteEmployee(@Req() req: any, @Param('id') id: string) {
-    return this.payrollService.hardDeleteEmployee(this.getBusinessId(req), id);
+    return this.payrollService.deleteEmployeeRecord(this.getBusinessId(req), id);
   }
 
   @Post('employees/:employeeId/contracts')

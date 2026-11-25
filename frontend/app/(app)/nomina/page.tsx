@@ -20,10 +20,26 @@ import {
   Wallet,
   ChevronLeft,
   ChevronRight,
+  Calculator,
+  FileCheck2,
+  History,
+  UserMinus,
 } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { PayrollChatActionBar } from "@/src/components/payroll/PayrollChatActionBar";
+import { MODAL_OPEN_ATTRIBUTE, SheetShell } from "@/src/components/payroll/SheetShell";
+import {
+  MoneyLine,
+  SettlementReportDetail,
+  SettlementReportSheet,
+  TERMINATION_REASON_LABELS,
+  TERMINATION_REASON_NOTICE,
+  formatSettlementDate,
+} from "@/src/components/payroll/SettlementReport";
+import CardActionsMenu, { cardMenuActionClass } from "@/src/components/sales/CardActionsMenu";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import { SearchSelect, type SearchSelectOption } from "@/src/components/shared/SearchSelect";
 import { AppApiError } from "@/src/lib/api";
@@ -42,6 +58,8 @@ import {
   type PayrollRun,
   type Settlement,
   type PayrollBenefitPayment,
+  type EmployeeDeletionCheck,
+  type PayrollTerminationReason,
   numberValue,
   payrollApi,
 } from "@/src/lib/payroll/api";
@@ -118,63 +136,6 @@ function payrollPeriodReferenceDate(period: PayrollPeriod) {
 }
 
 type WizardStep = 0 | 1 | 2 | 3;
-
-function SheetShell({
-  open,
-  title,
-  subtitle,
-  accent = "text-[#0fb18f]",
-  onClose,
-  children,
-  footer,
-  maxWidth = "sm:max-w-lg",
-}: {
-  open: boolean;
-  title: string;
-  subtitle: string;
-  accent?: string;
-  onClose: () => void;
-  children: ReactNode;
-  footer: ReactNode;
-  maxWidth?: string;
-}) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 sm:p-4">
-      <div className={cn(
-        "relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:rounded-[32px]",
-        maxWidth,
-      )}>
-        <div className="flex justify-center pt-3">
-          <div className="h-1.5 w-12 rounded-full bg-neutral-200" />
-        </div>
-        <div className="flex items-start justify-between gap-3 border-b border-neutral-100 bg-white px-5 pb-4 pt-3">
-          <div>
-            <h2 className="text-lg font-medium text-neutral-900">{title}</h2>
-            <p className={cn("mt-0.5 text-[10px] font-medium uppercase tracking-widest", accent)}>
-              {subtitle}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-neutral-500 transition hover:bg-neutral-200"
-            aria-label="Cerrar"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-50/30 px-5 py-4">
-          {children}
-          <div className="h-20" />
-        </div>
-        <div className="absolute inset-x-0 bottom-0 border-t border-neutral-100 bg-white/95 px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] backdrop-blur">
-          {footer}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function FieldBlock({
   label,
@@ -645,8 +606,8 @@ function PayrollConfirmDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-      <div className="w-full max-w-md rounded-t-[28px] border border-white/60 bg-white p-5 shadow-2xl sm:rounded-[28px]">
+    <div {...MODAL_OPEN_ATTRIBUTE} className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="w-full max-w-md rounded-t-[28px] border border-white/60 bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[28px]">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-medium text-slate-900">{title}</h2>
@@ -684,33 +645,6 @@ function PayrollConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MoneyLine({
-  label,
-  value,
-  color = "text-slate-700",
-  valueColor = "text-slate-900",
-  indent = false,
-  medium = false,
-  sign,
-}: {
-  label: string;
-  value: MoneyLike;
-  color?: string;
-  valueColor?: string;
-  indent?: boolean;
-  medium?: boolean;
-  sign?: "+" | "-";
-}) {
-  return (
-    <div className={cn("flex items-start justify-between gap-3 text-[13px]", indent && "pl-4")}>
-      <span className={cn("min-w-0 flex-1 font-normal leading-5", color)}>{label}</span>
-      <span className={cn("shrink-0 tabular-nums leading-5", valueColor, medium ? "font-medium" : "font-normal")}>
-        {sign ? `${sign} ${money(value)}` : money(value)}
-      </span>
     </div>
   );
 }
@@ -1179,7 +1113,7 @@ function PayrollEmployeeSheetShell<T extends string>({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
+    <div {...MODAL_OPEN_ATTRIBUTE} className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
       {/* OVERLAY BACKDROP */}
       <div
         className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
@@ -1622,11 +1556,6 @@ function PayrollQuickEmployeeSheet({
       setActiveTab("contrato");
       return setError(contractValidation);
     }
-    if (activeContract) {
-      setActiveTab("contrato");
-      return setError("Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.");
-    }
-
     if (mutationRef.current) return;
     mutationRef.current = true;
     setSubmitting(true);
@@ -1640,21 +1569,6 @@ function PayrollQuickEmployeeSheet({
       setError(err instanceof AppApiError ? err.message : "No se pudo crear el contrato.");
     } finally {
       mutationRef.current = false;
-      setSubmitting(false);
-    }
-  };
-
-  const inactivateCurrentContract = async () => {
-    if (!activeContract) return toast("Función pendiente de implementación.");
-    setSubmitting(true);
-    setError(null);
-    try {
-      await payrollApi.deleteContract(activeContract.id);
-      toast.success("Contrato inactivado");
-      onChanged();
-    } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo inactivar el contrato.");
-    } finally {
       setSubmitting(false);
     }
   };
@@ -1789,19 +1703,7 @@ function PayrollQuickEmployeeSheet({
                 </>
               )}
             />
-            {activeContract && (
-              <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
-                <p>Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.</p>
-                <button
-                  type="button"
-                  onClick={inactivateCurrentContract}
-                  disabled={submitting}
-                  className="h-10 w-full rounded-xl bg-white text-xs font-medium text-amber-800 shadow-sm disabled:opacity-60"
-                >
-                  Inactivar contrato actual
-                </button>
-              </div>
-            )}
+            {activeContract && <ContractVersionNotice />}
             <ContractFormSection value={contractDraft} arlRisks={arlRisks} onChange={setContractDraft} />
           </>
         )}
@@ -1825,7 +1727,6 @@ function PayrollQuickEmployeeSheet({
           error={error}
           primaryLabel="Crear contrato"
           submitting={submitting}
-          primaryDisabled={Boolean(activeContract)}
           onCancel={closeWithDirtyCheck}
           onPrimary={createContract}
         />
@@ -1900,19 +1801,7 @@ function PayrollQuickEmployeeSheet({
               <p className="mt-1 text-sm font-medium text-slate-900">{selectedEmployee ? employeeName(selectedEmployee) : "Selecciona un empleado"}</p>
             </div>
           )}
-          {activeContract && mode !== "createContractForEmployee" && (
-            <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
-              <p>Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.</p>
-              <button
-                type="button"
-                onClick={inactivateCurrentContract}
-                disabled={submitting}
-                className="h-10 w-full rounded-xl bg-white text-xs font-medium text-amber-800 shadow-sm disabled:opacity-60"
-              >
-                Inactivar contrato actual
-              </button>
-            </div>
-          )}
+          {activeContract && mode !== "createContractForEmployee" && <ContractVersionNotice />}
           <ContractFormSection value={contractDraft} arlRisks={arlRisks} onChange={setContractDraft} />
         </div>
       )}
@@ -1928,9 +1817,6 @@ function EmployeePayrollEditorSheet({
   selectedPeriod,
   onChanged,
   onCreateContract,
-  onInactivateContract,
-  onInactivateEmployee,
-  onHardDeleteEmployee,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1939,9 +1825,6 @@ function EmployeePayrollEditorSheet({
   selectedPeriod?: PayrollPeriod;
   onChanged: () => void;
   onCreateContract?: (employee: Employee) => void;
-  onInactivateContract?: (contract: Contract) => void;
-  onInactivateEmployee?: (employee: Employee) => void;
-  onHardDeleteEmployee?: (employee: Employee) => void;
 }) {
   const overtimeInputs = usePayrollOvertimeInputs();
   const [activeTab, setActiveTab] = useState<"horas" | "contrato" | "empleado">("horas");
@@ -2207,7 +2090,7 @@ function EmployeePayrollEditorSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
+    <div {...MODAL_OPEN_ATTRIBUTE} className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
       {/* OVERLAY BACKDROP */}
       <div
         className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
@@ -2226,21 +2109,6 @@ function EmployeePayrollEditorSheet({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (run.contract && run.contract.isActive !== false) {
-                    toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
-                    return;
-                  }
-                  onClose();
-                  onInactivateEmployee?.(run.employee);
-                }}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                aria-label="Inactivar"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -2507,7 +2375,7 @@ function PayrollSummaryPanel({
   selectedPeriod,
   visualPaid,
   onToggleVisualPaid,
-  onOpenEditor,
+  onEmployeeAction,
 }: {
   run: PayrollRun;
   expanded: boolean;
@@ -2516,7 +2384,7 @@ function PayrollSummaryPanel({
   selectedPeriod?: PayrollPeriod;
   visualPaid?: boolean;
   onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
-  onOpenEditor?: (run: PayrollRun) => void;
+  onEmployeeAction?: (action: EmployeeMenuAction, run: PayrollRun) => void;
 }) {
   // Valores escalados al período activo (quincenal o mensual)
   const netPayDisplay = toNumber(run.netPay);
@@ -2567,18 +2435,7 @@ function PayrollSummaryPanel({
                 {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Neto quincenal" : "Transferencia neta"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenEditor?.(run);
-              }}
-              className="p-1.5 text-slate-400 hover:text-[#0fb18f] hover:bg-slate-100 transition-colors rounded-full shrink-0 -mr-1"
-              title="Editar empleado"
-              aria-label="Editar"
-            >
-              <Edit3 className="h-4 w-4" />
-            </button>
+            <EmployeeActionsMenu onAction={(action) => onEmployeeAction?.(action, run)} />
           </div>
         </div>
 
@@ -2689,15 +2546,6 @@ function PayrollSummaryPanel({
       </article>
     </div>
   );
-}
-
-function formatSettlementDate(value?: string | Date | null): string {
-  if (!value) return "-";
-  const dateStr = typeof value === "string" ? value : value.toISOString();
-  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return "-";
-  const [, year, month, day] = match;
-  return `${day}/${month}/${year}`;
 }
 
 function SettlementPanelLegacy({ settlement }: { settlement?: Settlement }) {
@@ -3275,7 +3123,7 @@ function EmployeeCarousel({
   onLiquidateContract,
   contractLiquidated,
   settlementPosting,
-  onOpenEditor,
+  onEmployeeAction,
 }: {
   run: PayrollRun;
   settlement?: Settlement;
@@ -3290,7 +3138,7 @@ function EmployeeCarousel({
   onLiquidateContract?: (run: PayrollRun, settlement: Settlement) => void;
   contractLiquidated?: boolean;
   settlementPosting?: boolean;
-  onOpenEditor?: (run: PayrollRun) => void;
+  onEmployeeAction?: (action: EmployeeMenuAction, run: PayrollRun) => void;
 }) {
   return (
     <div
@@ -3306,7 +3154,7 @@ function EmployeeCarousel({
           selectedPeriod={selectedPeriod}
           visualPaid={visualPaid}
           onToggleVisualPaid={onToggleVisualPaid}
-          onOpenEditor={onOpenEditor}
+          onEmployeeAction={onEmployeeAction}
         />
         <SettlementPanel
           settlement={settlement}
@@ -3326,6 +3174,7 @@ function EmployeeStandaloneCard({
   complementaryAvailable,
   fallbackReason,
   onComplementaryRun,
+  onEmployeeAction,
 }: {
   employee: Employee;
   contract?: Contract | null;
@@ -3333,6 +3182,7 @@ function EmployeeStandaloneCard({
   complementaryAvailable?: boolean;
   fallbackReason: "PREVIEW_LOADING" | "PREVIEW_ERROR" | "NOT_APPLICABLE" | "NO_CONTRACT";
   onComplementaryRun?: (employee: Employee) => void;
+  onEmployeeAction?: (action: EmployeeMenuAction) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
@@ -3355,6 +3205,7 @@ function EmployeeStandaloneCard({
             <p className="max-w-[90px] text-[11px] font-medium leading-snug text-amber-600">Crear contrato para calcular nomina</p>
           )}
         </div>
+        {onEmployeeAction && <EmployeeActionsMenu canEdit={false} onAction={onEmployeeAction} />}
       </div>
 
       <p className={cn(
@@ -4557,290 +4408,527 @@ function PayrollNewsSheet({
   );
 }
 
-function SettlementSimulationSheet({
-  open,
-  onClose,
-  employees,
-  selectedPeriod,
-  onFinished,
+
+function ContractVersionNotice() {
+  return (
+    <div className="rounded-[20px] border border-sky-100 bg-sky-50 p-3 text-xs font-medium leading-relaxed text-sky-800">
+      Al crear el nuevo contrato, el contrato actual quedará inactivo y conservará su historial.
+      Para retirar al empleado usá «Desvincular empleado».
+    </div>
+  );
+}
+
+type EmployeeMenuAction = "edit" | "history" | "simulate" | "offboard";
+type OffboardingStep = "choose" | "terminate" | "simulate" | "delete" | "history";
+
+function EmployeeActionsMenu({
+  onAction,
+  canEdit = true,
 }: {
-  open: boolean;
-  onClose: () => void;
-  employees: Employee[];
-  selectedPeriod?: PayrollPeriod;
-  onFinished: (settlement: Settlement) => void;
+  onAction: (action: EmployeeMenuAction) => void;
+  canEdit?: boolean;
 }) {
-  const [employeeId, setEmployeeId] = useState("");
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [contractId, setContractId] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [settlement, setSettlement] = useState<Settlement | null>(null);
-  const [loadingContracts, setLoadingContracts] = useState(false);
+  const [open, setOpen] = useState(false);
+  const choose = (action: EmployeeMenuAction) => {
+    setOpen(false);
+    onAction(action);
+  };
+  return (
+    // Portal events bubble through React: keep clicks/keys from toggling the card below.
+    <span className="-mr-2 -mt-2 shrink-0" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <CardActionsMenu open={open} onOpenChange={setOpen} triggerLabel="Acciones del empleado" menuLabel="Acciones del empleado">
+        {canEdit && (
+          <button type="button" className={cardMenuActionClass} onClick={() => choose("edit")}>
+            <Edit3 className="h-4 w-4 text-slate-400" /> Editar empleado
+          </button>
+        )}
+        <button type="button" className={cardMenuActionClass} onClick={() => choose("history")}>
+          <History className="h-4 w-4 text-slate-400" /> Consultar historial
+        </button>
+        <button type="button" className={cardMenuActionClass} onClick={() => choose("simulate")}>
+          <Calculator className="h-4 w-4 text-slate-400" /> Simular liquidación
+        </button>
+        <div role="separator" className="mx-2 my-1 h-px bg-slate-100" />
+        <button type="button" className={cn(cardMenuActionClass, "text-rose-600 hover:bg-rose-50")} onClick={() => choose("offboard")}>
+          <UserMinus className="h-4 w-4" /> Desvincular empleado
+        </button>
+      </CardActionsMenu>
+    </span>
+  );
+}
+
+function OffboardingOptionCard({
+  icon,
+  iconClassName,
+  title,
+  description,
+  disabledReason,
+  onClick,
+}: {
+  icon: ReactNode;
+  iconClassName: string;
+  title: string;
+  description: string;
+  disabledReason?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={Boolean(disabledReason)}
+      className="flex w-full items-center gap-3 rounded-[22px] border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm"
+    >
+      <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full", iconClassName)}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-slate-900">{title}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{description}</span>
+        {disabledReason && <span className="mt-1 block text-[11px] font-medium text-amber-700">{disabledReason}</span>}
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+    </button>
+  );
+}
+
+function EmployeeOffboardingSheet({
+  employee,
+  contract,
+  onClose,
+  onChoose,
+}: {
+  employee: Employee | null;
+  contract: Contract | null;
+  onClose: () => void;
+  onChoose: (step: "terminate" | "delete") => void;
+}) {
+  const contractEnded = !contract || contract.isActive === false;
+  return (
+    <SheetShell
+      open={Boolean(employee)}
+      onClose={onClose}
+      title="Desvincular empleado"
+      subtitle={employee ? employeeName(employee) : ""}
+      accent="text-rose-600"
+      footer={
+        <button type="button" onClick={onClose} className="h-11 w-full rounded-2xl bg-slate-100 text-sm font-medium text-slate-700 hover:bg-slate-200">
+          Cancelar
+        </button>
+      }
+    >
+      <p className="mb-4 text-sm leading-relaxed text-slate-500">Seleccioná cómo deseás retirar al empleado de tu negocio.</p>
+      <div className="space-y-3">
+        <OffboardingOptionCard
+          icon={<FileCheck2 className="h-5 w-5" />}
+          iconClassName="bg-violet-50 text-violet-600"
+          title="Finalizar contrato laboral"
+          description="Calcular la liquidación final, registrar las obligaciones correspondientes y archivar al empleado."
+          disabledReason={contractEnded ? "El empleado no tiene un contrato vigente para finalizar." : undefined}
+          onClick={() => onChoose("terminate")}
+        />
+        <OffboardingOptionCard
+          icon={<Trash2 className="h-5 w-5" />}
+          iconClassName="bg-rose-50 text-rose-600"
+          title="Eliminar registro incorrecto"
+          description="Eliminar un empleado registrado por error, siempre que no posea operaciones asociadas."
+          onClick={() => onChoose("delete")}
+        />
+      </div>
+    </SheetShell>
+  );
+}
+
+function ContractTerminationSheet({
+  mode,
+  employee,
+  contract,
+  terminationEnabled,
+  onClose,
+  onTerminated,
+}: {
+  mode: "terminate" | "simulate" | null;
+  employee: Employee | null;
+  contract: Contract | null;
+  terminationEnabled: boolean;
+  onClose: () => void;
+  onTerminated: () => void;
+}) {
+  const open = Boolean(mode && employee && contract);
+  const today = getBusinessDayKey(new Date());
+  const startKey = contract?.startDate?.slice(0, 10) ?? "";
+  // Mounted fresh (keyed) for every opening, so no reset effect is needed.
+  const [endDate, setEndDate] = useState(today);
+  const [reason, setReason] = useState<PayrollTerminationReason | "">("");
+  const [note, setNote] = useState("");
+  const [result, setResult] = useState<{ key: string; settlement?: Settlement; error?: string } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmingPost, setConfirmingPost] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
+  const dateError = !/^\d{4}-\d{2}-\d{2}$/.test(endDate)
+    ? "Seleccioná una fecha de finalización."
+    : startKey && endDate < startKey
+      ? `La fecha de finalización no puede ser anterior a la fecha de ingreso (${formatSettlementDate(startKey)}).`
+      : null;
+
+  // Amounts always come from the existing simulation service; the reason is never sent to it.
+  const requestKey = open && contract && !dateError ? endDate : null;
   useEffect(() => {
-    if (!open) return;
-    setError(null);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !employeeId) {
-      setContracts([]);
-      setContractId("");
-      return;
-    }
-
+    if (!contract || !requestKey) return;
     let alive = true;
-    setLoadingContracts(true);
-    payrollApi
-      .listContracts(employeeId)
-      .then((data) => {
-        if (!alive) return;
-        setContracts(data);
-        const nextContract = data.find((contract) => !contract.endDate) ?? data[0];
-        setContractId(nextContract?.id ?? "");
-        setEndDate(isoDate(nextContract?.endDate));
-      })
-      .catch((err) => {
-        console.error(err);
-        if (alive) setError("No se pudieron cargar los contratos del empleado.");
-      })
-      .finally(() => {
-        if (alive) setLoadingContracts(false);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [employeeId, open]);
-
-  const selectedContract = contracts.find((contract) => contract.id === contractId);
-
-  useEffect(() => {
-    if (!open || !selectedContract) return;
-    setEndDate((current) => current || isoDate(selectedContract.endDate));
-  }, [open, selectedContract]);
-
-  const handleClose = () => {
-    setEmployeeId("");
-    setContracts([]);
-    setContractId("");
-    setEndDate("");
-    setSettlement(null);
-    setConfirmingPost(false);
-    setError(null);
-    onClose();
-  };
-
-  const handleSimulate = async () => {
-    if (!employeeId) {
-      setError("Selecciona un empleado.");
-      return;
-    }
-    if (!contractId) {
-      setError("Selecciona un contrato.");
-      return;
-    }
-
-    setSubmitting(true);
-    setError(null);
-    try {
-      const result = await payrollApi.simulateSettlement(contractId, {
-        ...(endDate ? { endDate } : {}),
-        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
-      });
-      setSettlement(result);
-      onFinished(result);
-      toast.success("Liquidacion simulada");
-    } catch (err) {
-      if (err instanceof AppApiError) {
-        setError(err.message);
-      } else {
-        console.error(err);
-        setError("No se pudo simular la liquidacion.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!open || !contractId) return;
-    let alive = true;
-    const timer = window.setTimeout(async () => {
-      setSubmitting(true);
-      setError(null);
-      try {
-        const result = await payrollApi.simulateSettlement(contractId, {
-          ...(endDate ? { endDate } : {}),
-          ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+    const timer = window.setTimeout(() => {
+      payrollApi.simulateSettlement(contract.id, { endDate: requestKey })
+        .then((settlement) => { if (alive) setResult({ key: requestKey, settlement }); })
+        .catch((err: unknown) => {
+          if (alive) setResult({ key: requestKey, error: err instanceof AppApiError ? err.message : "No se pudo calcular el informe preliminar." });
         });
-        if (!alive) return;
-        setSettlement(result);
-        onFinished(result);
-      } catch (err) {
-        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudo simular la liquidacion.");
-      } finally {
-        if (alive) setSubmitting(false);
-      }
-    }, 500);
+    }, 300);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [contractId, endDate, onFinished, open, selectedPeriod]);
+  }, [contract, requestKey]);
+  const current = result && result.key === requestKey ? result : null;
+  const preview = current?.settlement ?? null;
+  const loading = Boolean(requestKey) && !current;
+  const error = submitError ?? current?.error ?? null;
 
-  const handlePostSettlement = async () => {
-    if (!contractId) return;
-    if (!endDate) {
-      setError("Para postear una liquidacion real debes indicar fecha de salida.");
-      return;
-    }
-    if (!confirmingPost) {
-      setConfirmingPost(true);
-      return;
-    }
+  if (!open || !employee || !contract) return null;
+
+  const isTerminate = mode === "terminate";
+  const futureDate = endDate > today;
+  const noteRequired = reason === "OTHER" && !note.trim();
+  const confirmBlockedReason = !terminationEnabled
+    ? "La confirmación definitiva está bloqueada temporalmente mientras se resuelve un riesgo contable de provisiones duplicadas. Podés revisar el informe preliminar."
+    : futureDate
+      ? `Podés confirmar la desvinculación a partir del ${formatSettlementDate(endDate)}.`
+      : null;
+  const canConfirm = isTerminate && !confirmBlockedReason && !dateError && !loading && Boolean(preview) && Boolean(reason) && !noteRequired;
+
+  const confirmTermination = async () => {
+    if (!reason || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
-    setError(null);
+    setSubmitError(null);
     try {
-      const posted = await payrollApi.createSettlement(contractId, {
+      await payrollApi.createSettlement(contract.id, {
         endDate,
-        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+        terminationReason: reason,
+        ...(note.trim() ? { terminationNote: note.trim() } : {}),
       });
-      setSettlement(posted);
-      onFinished(posted);
-      toast.success("Liquidacion posteada");
-      setConfirmingPost(false);
+      toast.success("Empleado desvinculado. La liquidación quedó registrada como obligación pendiente de pago.");
+      setConfirmOpen(false);
+      onTerminated();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo postear la liquidacion.");
+      setConfirmOpen(false);
+      setSubmitError(err instanceof AppApiError ? err.message : "No se pudo confirmar la desvinculación.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
-  if (!open) return null;
+  return (
+    <>
+      <SheetShell
+        open
+        onClose={() => !submitting && onClose()}
+        title="Liquidación de contrato"
+        subtitle={isTerminate ? "Informe preliminar" : "Simulación · Informe preliminar"}
+        accent="text-violet-600"
+        footer={
+          <div className="space-y-2">
+            {isTerminate && confirmBlockedReason && (
+              <p className="text-center text-[11px] font-medium leading-relaxed text-amber-700">{confirmBlockedReason}</p>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="h-11 flex-1 rounded-2xl bg-slate-100 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-60"
+              >
+                {isTerminate ? "Cancelar" : "Cerrar"}
+              </button>
+              {isTerminate && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={!canConfirm || submitting}
+                  className="h-11 flex-1 rounded-2xl bg-rose-600 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Confirmar desvinculación
+                </button>
+              )}
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <section className="flex items-center gap-3 rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-sm font-medium text-[#0f8f76]">
+              {initials(employee)}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-medium text-slate-900">{employeeName(employee)}</p>
+              <p className="text-xs text-slate-500">Fecha de ingreso: {formatSettlementDate(startKey)}</p>
+            </div>
+          </section>
+
+          <FieldBlock label="Fecha de finalización">
+            <BigInput type="date" value={endDate} min={startKey || undefined} onChange={(event) => { setSubmitError(null); setEndDate(event.target.value); }} />
+          </FieldBlock>
+          {dateError && <p className="-mt-2 px-1 text-xs font-medium text-rose-600">{dateError}</p>}
+
+          {isTerminate && (
+            <FieldBlock label="Motivo de finalización">
+              <select
+                value={reason}
+                onChange={(event) => setReason(event.target.value as PayrollTerminationReason | "")}
+                className="h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 outline-none transition focus:border-emerald-400"
+              >
+                <option value="" disabled>Seleccioná un motivo</option>
+                {(Object.keys(TERMINATION_REASON_LABELS) as PayrollTerminationReason[]).map((value) => (
+                  <option key={value} value={value}>{TERMINATION_REASON_LABELS[value]}</option>
+                ))}
+              </select>
+            </FieldBlock>
+          )}
+          {isTerminate && reason === "OTHER" && (
+            <FieldBlock label="Observación">
+              <textarea
+                value={note}
+                maxLength={500}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Describí el motivo"
+                className="min-h-20 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-800 outline-none transition focus:border-emerald-400"
+              />
+            </FieldBlock>
+          )}
+
+          {loading && <p className="rounded-2xl bg-slate-50 px-4 py-3 text-center text-xs text-slate-500">Calculando informe preliminar…</p>}
+          {error && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+          {preview && !loading && <SettlementReportDetail settlement={preview} />}
+
+          {isTerminate && (
+            <p className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-sky-800">
+              Al confirmar, Sactec registrará esta liquidación como una obligación laboral pendiente de pago y archivará al empleado.
+              El pago no se registra en este paso y la liquidación no se marca como pagada.
+            </p>
+          )}
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800">
+            <p>
+              El informe contempla exclusivamente los conceptos soportados actualmente por Sactec: prestaciones sociales causadas en el año de cálculo.
+              No incluye salarios pendientes, indemnizaciones ni prestaciones de años anteriores.
+            </p>
+            <p className="mt-1 font-medium">{TERMINATION_REASON_NOTICE}</p>
+          </div>
+        </div>
+      </SheetShell>
+      <PayrollConfirmDialog
+        open={confirmOpen}
+        title="¿Confirmar desvinculación?"
+        description={`Se registrará la liquidación de ${employeeName(employee)} al ${formatSettlementDate(endDate)} como obligación pendiente de pago, se finalizará el contrato y se archivará al empleado. Esta acción no se puede deshacer.`}
+        confirmLabel="Confirmar desvinculación"
+        intent="settlement"
+        loading={submitting}
+        onConfirm={confirmTermination}
+        onCancel={() => !submitting && setConfirmOpen(false)}
+      />
+    </>
+  );
+}
+
+function DeleteEmployeeRecordSheet({
+  employee,
+  onClose,
+  onDeleted,
+}: {
+  employee: Employee | null;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [check, setCheck] = useState<EmployeeDeletionCheck | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!employee) return;
+    let alive = true;
+    payrollApi.getEmployeeDeletionCheck(employee.id)
+      .then((result) => { if (alive) setCheck(result); })
+      .catch((err: unknown) => {
+        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudieron verificar las condiciones de eliminación.");
+      });
+    return () => { alive = false; };
+  }, [employee]);
+
+  if (!employee) return null;
+
+  const remove = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      // The backend re-checks every dependency inside the delete transaction.
+      await payrollApi.hardDeleteEmployee(employee.id);
+      toast.success("Registro eliminado.");
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudo eliminar el registro.");
+      payrollApi.getEmployeeDeletionCheck(employee.id).then(setCheck).catch(() => undefined);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
-      <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px]">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-violet-500">Liquidacion</p>
-            <h2 className="mt-1 text-lg font-medium text-slate-900">Simular contrato</h2>
-          </div>
+    <SheetShell
+      open
+      onClose={() => !deleting && onClose()}
+      title="Eliminar registro incorrecto"
+      subtitle="Eliminación permanente"
+      accent="text-rose-600"
+      footer={
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onClose} disabled={deleting} className="h-11 flex-1 rounded-2xl bg-slate-100 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-60">
+            Cancelar
+          </button>
           <button
             type="button"
-            onClick={handleClose}
-            className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500"
-            aria-label="Cerrar"
+            onClick={remove}
+            disabled={!check?.canDelete || deleting}
+            className="h-11 flex-1 rounded-2xl bg-rose-600 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <X className="h-4 w-4" />
+            {deleting ? "Eliminando..." : "Eliminar registro"}
           </button>
         </div>
+      }
+    >
+      <div className="space-y-4">
+        <section className="flex items-center gap-3 rounded-[24px] border border-rose-100 bg-white p-4 shadow-sm">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-rose-50 text-rose-600">
+            <Trash2 className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-medium text-slate-900">{employeeName(employee)}</p>
+            <p className="text-xs text-slate-500">{employee.documentNumber ?? "Sin documento"}</p>
+          </div>
+        </section>
 
-        <div className="space-y-3">
-          <select
-            value={employeeId}
-            onChange={(event) => {
-              setEmployeeId(event.target.value);
-              setSettlement(null);
-            }}
-            className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-300"
-          >
-            <option value="">Empleado</option>
-            {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employeeName(employee)} {employee.documentNumber ? `- ${employee.documentNumber}` : ""}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={contractId}
-            onChange={(event) => {
-              setContractId(event.target.value);
-              setSettlement(null);
-            }}
-            disabled={!employeeId || loadingContracts}
-            className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-300 disabled:opacity-60"
-          >
-            <option value="">{loadingContracts ? "Cargando contratos..." : "Contrato"}</option>
-            {contracts.map((contract) => (
-              <option key={contract.id} value={contract.id}>
-                {formatCivilDate(contract.startDate)} - {contract.endDate ? formatCivilDate(contract.endDate) : "Activo"}
-              </option>
-            ))}
-          </select>
-
-          <label className="block rounded-2xl bg-slate-50 p-3">
-            <span className="text-xs font-medium text-slate-500">Fecha de salida opcional</span>
-            <input
-              value={endDate}
-              onChange={(event) => setEndDate(event.target.value)}
-              type="date"
-              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-violet-300"
-            />
-            <span className="mt-2 block text-[11px] text-slate-400">
-              Si dejás vacío este campo y el contrato no tiene fecha de salida, se proyecta al día actual.
-            </span>
-          </label>
-
-          {confirmingPost && (
-            <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs font-medium text-rose-700">
-              Esta acción generará la liquidación definitiva y cerrará el contrato.
-            </div>
+        <section className="rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Validaciones de eliminación</p>
+          {!check && !error && <p className="mt-3 text-xs text-slate-400">Verificando operaciones asociadas…</p>}
+          {check && (
+            <ul className="mt-2 space-y-1.5">
+              {check.checks.map((item) => (
+                <li key={item.code} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="text-slate-600">{item.label}</span>
+                  <span className={cn("font-medium tabular-nums", item.count ? "text-rose-600" : "text-emerald-600")}>
+                    {item.count ? `${item.count} asociada${item.count === 1 ? "" : "s"}` : "Sin registros"}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
+        </section>
 
-          {selectedContract && (
-            <div className="rounded-2xl bg-violet-50 p-3 text-xs text-violet-800">
-              Ingreso: {formatCivilDate(selectedContract.startDate)} · Salario: {money(selectedContract.salaryMonthly)}
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-600">
-            {error}
+        {check && !check.canDelete && (
+          <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800">
+            No se puede eliminar: el empleado tiene operaciones asociadas. Para conservar su historial usá «Finalizar contrato laboral».
           </p>
         )}
+        {error && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        <p className="flex items-start gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-medium leading-relaxed text-rose-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          La eliminación es permanente: se borrarán el empleado y sus contratos registrados por error. No se puede deshacer.
+        </p>
+      </div>
+    </SheetShell>
+  );
+}
 
-        {settlement && (
-          <div className="mt-4">
-            <SettlementPanel settlement={settlement} />
-          </div>
-        )}
+function EmployeeHistorySheet({ employee, onClose }: { employee: Employee | null; onClose: () => void }) {
+  const [contracts, setContracts] = useState<Contract[] | null>(null);
+  const [settlements, setSettlements] = useState<Settlement[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reportId, setReportId] = useState<string | null>(null);
 
-        <div className="mt-5 flex gap-2">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="h-12 flex-1 rounded-2xl bg-slate-100 text-sm font-medium text-slate-600"
-          >
+  useEffect(() => {
+    if (!employee) return;
+    let alive = true;
+    Promise.all([payrollApi.listContracts(employee.id), payrollApi.listSettlements({ employeeId: employee.id })])
+      .then(([contractRows, settlementRows]) => {
+        if (!alive) return;
+        setContracts(contractRows);
+        setSettlements(settlementRows.filter((row) => row.type === "REAL_TERMINATION"));
+      })
+      .catch((err: unknown) => {
+        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudo cargar el historial.");
+      });
+    return () => { alive = false; };
+  }, [employee]);
+
+  if (!employee) return null;
+
+  return (
+    <>
+      <SheetShell
+        open
+        onClose={onClose}
+        title="Historial del empleado"
+        subtitle={employeeName(employee)}
+        footer={
+          <button type="button" onClick={onClose} className="h-11 w-full rounded-2xl bg-slate-100 text-sm font-medium text-slate-700 hover:bg-slate-200">
             Cerrar
           </button>
-
-
-
-
-
-
-
-
-        </div>
-        {settlement && (
-          <button
-            type="button"
-            onClick={handlePostSettlement}
-            disabled={submitting}
-            className="mt-2 h-12 w-full rounded-2xl bg-slate-900 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {confirmingPost ? "Confirmar registro definitivo" : "Registrar liquidacion"}
-          </button>
+        }
+      >
+        {error && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        {!error && !contracts && <p className="py-8 text-center text-sm text-slate-400">Cargando historial…</p>}
+        {contracts && (
+          <div className="space-y-4">
+            <section className="rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Contratos</p>
+              <ul className="mt-2 divide-y divide-slate-100">
+                {contracts.map((item) => (
+                  <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800">{item.contractType === "FIXED_TERM" ? "Término fijo" : "Término indefinido"} · {money(item.salaryMonthly)}</p>
+                      <p className="text-xs text-slate-500">{formatSettlementDate(item.startDate)} — {item.endDate ? formatSettlementDate(item.endDate) : "sin fecha de fin"}</p>
+                    </div>
+                    <span className={cn("shrink-0 rounded-full px-2 py-1 text-[10px] font-medium", item.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>
+                      {item.isActive ? "Activo" : "Finalizado"}
+                    </span>
+                  </li>
+                ))}
+                {!contracts.length && <li className="py-2 text-xs text-slate-400">Sin contratos registrados.</li>}
+              </ul>
+            </section>
+            <section className="rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Liquidaciones de contrato</p>
+              <ul className="mt-2 divide-y divide-slate-100">
+                {(settlements ?? []).map((item) => (
+                  <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800">{formatSettlementDate(item.requestedEndDate ?? item.endDate)} · {money(item.totalAmount)}</p>
+                      <p className="text-xs text-slate-500">
+                        {item.terminationReason ? TERMINATION_REASON_LABELS[item.terminationReason] : "Motivo no informado"}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setReportId(item.id)} className="shrink-0 rounded-xl bg-violet-50 px-3 py-1.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
+                      Ver informe
+                    </button>
+                  </li>
+                ))}
+                {settlements && !settlements.length && <li className="py-2 text-xs text-slate-400">Sin liquidaciones registradas.</li>}
+              </ul>
+            </section>
+          </div>
         )}
-      </div>
-    </div>
+      </SheetShell>
+      <SettlementReportSheet settlementId={reportId} onClose={() => setReportId(null)} />
+    </>
   );
 }
 
@@ -4871,7 +4959,6 @@ export default function PayrollPage() {
   const [quickSheetMode, setQuickSheetMode] = useState<Exclude<PayrollSheetMode, "editEmployee"> | null>(null);
   const [quickInitialEmployee, setQuickInitialEmployee] = useState<Employee | null>(null);
   const [newsSheetOpen, setNewsSheetOpen] = useState(false);
-  const [settlementSheetOpen, setSettlementSheetOpen] = useState(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
   const [newsRun, setNewsRun] = useState<PayrollRun | null>(null);
   const [newsEmployee, setNewsEmployee] = useState<Employee | null>(null);
@@ -4902,12 +4989,16 @@ export default function PayrollPage() {
   const batchIdempotencyKeyRef = useRef<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: "visual-payment"; run: PayrollRun; paid: boolean }
-    | { type: "post-settlement"; run: PayrollRun; settlement: Settlement }
     | { type: "complementary-run"; employee: Employee }
     | null
   >(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const [postingSettlementContractId, setPostingSettlementContractId] = useState<string | null>(null);
+  const { payrollContractTerminationEnabled } = useFeatureFlags();
+  const [offboarding, setOffboarding] = useState<{
+    step: OffboardingStep;
+    employee: Employee;
+    contract: Contract | null;
+  } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pagePreviewKeyRef = useRef<string | null>(null);
   const pagePreviewRequestRef = useRef(0);
@@ -5293,16 +5384,6 @@ export default function PayrollPage() {
     setConfirmAction({ type: "visual-payment", run, paid });
   }, []);
 
-  const handleLiquidateContractPrompt = useCallback((run: PayrollRun, settlement: Settlement) => {
-    const existingSettlement = settlements[run.employeeId];
-    if (existingSettlement && !existingSettlement.preview) {
-      toast.error("Este contrato ya tiene una liquidacion registrada.");
-      return;
-    }
-    setConfirmAction({ type: "post-settlement", run, settlement });
-  }, [settlements]);
-
-
   const handleSettlementPreview = useCallback((settlement: Settlement) => {
     if (settlement.preview) {
       setSettlementPreviewByContract((current) => ({
@@ -5321,72 +5402,25 @@ export default function PayrollPage() {
     await refreshPayrollData();
   }, [refreshPayrollData]);
 
-  const handleInactivateContract = useCallback((contract: Contract) => {
-    toast((t) => (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-slate-900">¿Inactivar este contrato?</p>
-        <p className="text-xs text-slate-500">El contrato dejará de estar activo. El historial se conservará.</p>
-        <div className="flex gap-2 mt-1">
-          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200">Cancelar</button>
-          <button onClick={async () => {
-            toast.dismiss(t.id);
-            try {
-              await payrollApi.deleteContract(contract.id);
-              toast.success("Contrato inactivado");
-              await refreshPeople();
-            } catch (err) {
-              toast.error(payrollErrorMessage(err, "No se pudo inactivar el contrato."), { duration: 4000 });
-            }
-          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Inactivar contrato</button>
-        </div>
-      </div>
-    ), { duration: 3000 });
-  }, [refreshPeople]);
+  const handleEmployeeAction = useCallback((
+    action: EmployeeMenuAction,
+    employee: Employee,
+    contract: Contract | null,
+    run?: PayrollRun,
+  ) => {
+    if (action === "edit") {
+      if (!run) return;
+      setEditorRun(run);
+      setEditorSheetOpen(true);
+      return;
+    }
+    setOffboarding({ step: action === "offboard" ? "choose" : action, employee, contract });
+  }, []);
 
-  const handleInactivateEmployee = useCallback((employee: Employee) => {
-    toast((t) => (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-slate-900">¿Inactivar este empleado?</p>
-        <p className="text-xs text-slate-500">El empleado dejará de aparecer como activo. No se eliminará su historial.</p>
-        <div className="flex gap-2 mt-1">
-          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200">Cancelar</button>
-          <button onClick={async () => {
-            toast.dismiss(t.id);
-            try {
-              await payrollApi.deleteEmployee(employee.id);
-              toast.success("Empleado inactivado");
-              await refreshPeople();
-            } catch (err) {
-              toast.error(payrollErrorMessage(err, "No se pudo inactivar el empleado."), { duration: 4000 });
-            }
-          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Inactivar empleado</button>
-        </div>
-      </div>
-    ), { duration: 3000 });
+  const finishOffboarding = useCallback(() => {
+    setOffboarding(null);
+    void refreshPeople();
   }, [refreshPeople]);
-
-  const handleHardDeleteEmployee = useCallback((employee: Employee) => {
-    toast((t) => (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-slate-900">¿Eliminar este empleado?</p>
-        <p className="text-xs text-slate-500">Solo funciona si no tiene historial. Acción irreversible.</p>
-        <div className="flex gap-2 mt-1">
-          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200">Cancelar</button>
-          <button onClick={async () => {
-            toast.dismiss(t.id);
-            try {
-              await payrollApi.hardDeleteEmployee(employee.id);
-              toast.success("Empleado eliminado");
-              await refreshPeople();
-            } catch (err) {
-              toast.error(payrollErrorMessage(err, "No se pudo eliminar definitivamente."), { duration: 4000 });
-            }
-          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Eliminar empleado</button>
-        </div>
-      </div>
-    ), { duration: 3000 });
-  }, [refreshPeople]);
-
 
   const handleCreateOrSelectPeriod = async (
     year: number,
@@ -5471,48 +5505,11 @@ export default function PayrollPage() {
         return;
       }
 
-      const { run, settlement } = confirmAction;
-      const existingSettlement = settlements[run.employeeId];
-      if (existingSettlement && !existingSettlement.preview) {
-        toast.error("Este contrato ya tiene una liquidacion registrada.");
-        setConfirmAction(null);
-        return;
-      }
-
-      const contractId = run.contractId ?? run.contract?.id;
-      if (!contractId) {
-        toast.error("No se encontro contrato para liquidar.");
-        setConfirmAction(null);
-        return;
-      }
-
-      setPostingSettlementContractId(contractId);
-      const salaryConceptsAmount = numberValue(
-        settlement.usedParameters?.salaryConceptsAmount as string | number | null | undefined,
-      );
-      const posted = await payrollApi.createSettlement(contractId, {
-        endDate: settlement.requestedEndDate ?? settlement.endDate ?? settlementDefaultEndDate(run.contract, selectedPeriod),
-        calculationYear: settlement.calculationYear ?? selectedPeriod?.year,
-        ...(salaryConceptsAmount > 0 ? { salaryConceptsAmount } : {}),
-      });
-      setSettlements((current) => ({
-        ...current,
-        [posted.employeeId]: posted,
-      }));
-      setSettlementPreviewByContract((current) => {
-        const next = { ...current };
-        delete next[contractId];
-        return next;
-      });
-      await refreshPeople();
-      toast.success("Contrato liquidado.");
-      setConfirmAction(null);
     } catch (err) {
-      const message = err instanceof AppApiError ? err.message : "No se pudo completar la liquidacion.";
+      const message = err instanceof AppApiError ? err.message : "No se pudo completar la operacion.";
       toast.error(message);
     } finally {
       setConfirmLoading(false);
-      setPostingSettlementContractId(null);
     }
   };
 
@@ -5800,6 +5797,7 @@ export default function PayrollPage() {
                                   : "NO_CONTRACT"
                           }
                           onComplementaryRun={(employee) => setConfirmAction({ type: "complementary-run", employee })}
+                          onEmployeeAction={(action) => handleEmployeeAction(action, row.employee, row.contract ?? null)}
                         />
                       );
                     }
@@ -5822,13 +5820,10 @@ export default function PayrollPage() {
                         selectedPeriod={selectedPeriod}
                         visualPaid={visualPaidRuns[run.id]}
                         onToggleVisualPaid={handleToggleVisualPayment}
-                        onLiquidateContract={handleLiquidateContractPrompt}
                         contractLiquidated={Boolean(settlements[run.employeeId] && !settlements[run.employeeId].preview)}
-                        settlementPosting={postingSettlementContractId === run.contractId}
-                        onOpenEditor={(selectedRun) => {
+                        onEmployeeAction={(action, selectedRun) => {
                           setSelectedRunId(selectedRun.id);
-                          setEditorRun(selectedRun);
-                          setEditorSheetOpen(true);
+                          handleEmployeeAction(action, selectedRun.employee, selectedRun.contract ?? null, selectedRun);
                         }}
                       />
                     );
@@ -5843,9 +5838,7 @@ export default function PayrollPage() {
             settlement={!isPayrollLoading && selectedRun ? (settlements[selectedRun.employeeId] ?? settlementPreviewByContract[selectedRun.contractId]) : undefined}
             onTogglePayment={togglePayment}
             selectedPeriod={selectedPeriod}
-            onLiquidateContract={handleLiquidateContractPrompt}
             contractLiquidated={!isPayrollLoading && selectedRun ? Boolean(settlements[selectedRun.employeeId] && !settlements[selectedRun.employeeId].preview) : false}
-            settlementPosting={!isPayrollLoading && selectedRun ? postingSettlementContractId === selectedRun.contractId : false}
           />
         </main>
 
@@ -5901,9 +5894,6 @@ export default function PayrollPage() {
             setQuickInitialEmployee(employee);
             setQuickSheetMode("createContractForEmployee");
           }}
-          onInactivateContract={handleInactivateContract}
-          onInactivateEmployee={handleInactivateEmployee}
-          onHardDeleteEmployee={handleHardDeleteEmployee}
         />
         <PayrollQuickEmployeeSheet
           open={quickSheetMode !== null}
@@ -5930,13 +5920,40 @@ export default function PayrollPage() {
           onChanged={() => { void refreshPayrollData(); }}
         />
 
-        <SettlementSimulationSheet
-          open={settlementSheetOpen}
-          onClose={() => setSettlementSheetOpen(false)}
-          employees={employees}
-          selectedPeriod={selectedPeriod}
-          onFinished={handleSettlementPreview}
-        />
+        {offboarding?.step === "choose" && (
+          <EmployeeOffboardingSheet
+            employee={offboarding.employee}
+            contract={offboarding.contract}
+            onClose={() => setOffboarding(null)}
+            onChoose={(step) => setOffboarding((current) => (current ? { ...current, step } : current))}
+          />
+        )}
+        {(offboarding?.step === "terminate" || offboarding?.step === "simulate") && (
+          <ContractTerminationSheet
+            key={`${offboarding.step}-${offboarding.employee.id}`}
+            mode={offboarding.step}
+            employee={offboarding.employee}
+            contract={offboarding.contract}
+            terminationEnabled={payrollContractTerminationEnabled}
+            onClose={() => setOffboarding(null)}
+            onTerminated={finishOffboarding}
+          />
+        )}
+        {offboarding?.step === "delete" && (
+          <DeleteEmployeeRecordSheet
+            key={offboarding.employee.id}
+            employee={offboarding.employee}
+            onClose={() => setOffboarding(null)}
+            onDeleted={finishOffboarding}
+          />
+        )}
+        {offboarding?.step === "history" && (
+          <EmployeeHistorySheet
+            key={offboarding.employee.id}
+            employee={offboarding.employee}
+            onClose={() => setOffboarding(null)}
+          />
+        )}
         <SheetShell
           open={batchPaymentOpen}
           onClose={() => {

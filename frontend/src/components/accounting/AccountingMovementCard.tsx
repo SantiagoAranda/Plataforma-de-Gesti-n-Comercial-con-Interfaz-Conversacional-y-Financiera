@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import {
   Banknote,
+  FileText,
   Landmark,
   MoreVertical,
   PiggyBank,
@@ -13,6 +15,7 @@ import {
   getAccountingMovementDisplayName,
 } from "@/src/lib/accountingMovementDisplay";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
+import { SettlementReportSheet } from "@/src/components/payroll/SettlementReport";
 
 type MovementKind =
   | "TODOS"
@@ -245,6 +248,9 @@ export function AccountingMovementCard({
   const iconStyle = getIconStyles(kind);
   const detailText = getReadableDetail(movement.detail, movement.originType);
   const displayName = getAccountingMovementDisplayName(movement);
+  const settlementId =
+    movement.originType === "PAYROLL_SETTLEMENT" ? movement.originId ?? null : null;
+  const [reportOpen, setReportOpen] = useState(false);
 
   return (
     <div
@@ -295,8 +301,26 @@ export function AccountingMovementCard({
               {detailText}
             </div>
           ) : null}
+          {settlementId ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReportOpen(true);
+              }}
+              className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Ver informe de liquidación
+            </button>
+          ) : null}
         </div>
       </div>
+      {/* Read-only: reuses GET /payroll/settlements/:id, creates no movements. */}
+      <SettlementReportSheet
+        settlementId={reportOpen ? settlementId : null}
+        onClose={() => setReportOpen(false)}
+      />
 
       <div className="border-t border-neutral-100 pt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">

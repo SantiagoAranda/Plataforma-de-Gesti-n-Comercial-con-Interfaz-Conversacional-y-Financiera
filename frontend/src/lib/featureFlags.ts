@@ -5,6 +5,8 @@ export type FeatureFlags = {
   simpleRegimeTaxModuleEnabled: boolean;
   /** @deprecated Use simpleRegimeSalesEnabled. */
   simpleRegimeEnabled: boolean;
+  /** Definitive contract termination; off until the payroll provision risk is resolved. */
+  payrollContractTerminationEnabled?: boolean;
 };
 
 export function getFeatureFlags() {

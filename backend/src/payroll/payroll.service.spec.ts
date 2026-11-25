@@ -13,6 +13,7 @@ import {
   PayrollPeriodStatus,
   PayrollSettlementStatus,
   PayrollSettlementType,
+  PayrollTerminationReason,
   Prisma,
   PaymentMethod,
 } from '@prisma/client';
@@ -20,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
 import { PayrollService } from './payroll.service';
+import { FeatureFlagsService } from '../common/config/feature-flags';
 
 const businessId = 'biz-1';
 const periodId = 'period-1';
@@ -886,14 +888,17 @@ describe('PayrollService payroll history rules', () => {
   });
 
   it('hard deletes an employee only when there is no payroll history', async () => {
-    const prisma = createPrismaMock();
+    const prisma = withRecordDeletionMocks(createPrismaMock());
     const service = new PayrollService(prisma as any);
 
-    await expect(service.hardDeleteEmployee('biz-1', 'emp-1')).resolves.toEqual(
-      {
-        ok: true,
-      },
-    );
+    await expect(
+      service.deleteEmployeeRecord('biz-1', 'emp-1'),
+    ).resolves.toEqual({
+      ok: true,
+    });
+    expect(prisma.employeeContract.deleteMany).toHaveBeenCalledWith({
+      where: { businessId: 'biz-1', employeeId: 'emp-1' },
+    });
     expect(prisma.employee.delete).toHaveBeenCalledWith({
       where: { id: 'emp-1' },
     });
@@ -3702,7 +3707,11 @@ describe('PayrollService payroll history rules', () => {
         mappings.filter((mapping) => codes.includes(mapping.conceptCode)),
       );
     });
-    const service = new PayrollService(prisma as any);
+    prisma.payrollRun.findFirst.mockResolvedValue({ id: 'run-2026-12' });
+    const service = new PayrollService(prisma as any, terminationEnabled);
+    jest
+      .spyOn(service as any, 'operationalPaymentDate')
+      .mockReturnValue(new Date('2027-01-05T12:00:00.000Z'));
 
     const preview: any = await service.simulateContractSettlement(
       businessId,
@@ -3716,8 +3725,19 @@ describe('PayrollService payroll history rules', () => {
       {
         endDate: '2026-12-31',
         calculationYear: 2026,
+        terminationReason: PayrollTerminationReason.VOLUNTARY_RESIGNATION,
       },
     );
+    expect(prisma.employee.update).toHaveBeenCalledWith({
+      where: { id: employeeId },
+      data: { isActive: false },
+    });
+    expect(
+      prisma.payrollContractSettlement.update.mock.calls.at(-1)[0].data,
+    ).toMatchObject({
+      terminationReason: PayrollTerminationReason.VOLUNTARY_RESIGNATION,
+      terminationNote: null,
+    });
 
     const movements =
       prisma.accountingMovement.createMany.mock.calls[0][0].data;
@@ -4811,5 +4831,302 @@ describe('PayrollService benefit payments', () => {
       expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
       expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
     });
+  });
+});
+
+const terminationEnabled = {
+  payrollContractTerminationEnabled: true,
+} as FeatureFlagsService;
+
+function withRecordDeletionMocks(prisma: any) {
+  prisma.$queryRaw = jest
+    .fn()
+    .mockResolvedValueOnce([{ id: 'emp-1' }])
+    .mockResolvedValueOnce([{ id: contractId }]);
+  prisma.payrollEvent.count = jest.fn().mockResolvedValue(0);
+  prisma.payrollBenefitPayment.count = jest.fn().mockResolvedValue(0);
+  prisma.accountingMovement.count = jest.fn().mockResolvedValue(0);
+  prisma.employeeContract.deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+  return prisma;
+}
+
+describe('PayrollService employee termination flow', () => {
+  function settlementPrisma() {
+    const prisma = createPrismaMock();
+    const contract = defaultContract();
+    let record: any;
+    let lines: any[] = [];
+    prisma.employeeContract.findFirst.mockResolvedValue(contract);
+    prisma.payrollRun.findFirst.mockResolvedValue({ id: 'run-final' });
+    prisma.payrollContractSettlement.create.mockImplementation(
+      ({ data }: any) => {
+        record = { id: 'settlement-1', ...data };
+        return Promise.resolve(record);
+      },
+    );
+    prisma.payrollContractSettlementLine.createMany.mockImplementation(
+      ({ data }: any) => {
+        lines = data;
+        return Promise.resolve({ count: data.length });
+      },
+    );
+    const withRelations = (extra: any = {}) => ({
+      ...record,
+      ...extra,
+      employee: defaultEmployee(),
+      contract,
+      lines,
+    });
+    prisma.payrollContractSettlement.findUnique.mockImplementation(() =>
+      Promise.resolve(withRelations()),
+    );
+    prisma.payrollContractSettlement.update.mockImplementation(
+      ({ data }: any) => Promise.resolve(withRelations(data)),
+    );
+    const mappings = seedPayrollAccountingMappingsFixture();
+    prisma.payrollAccountingMapping.findMany.mockImplementation((args: any) =>
+      Promise.resolve(
+        mappings.filter((mapping) =>
+          (args.where.conceptCode.in as string[]).includes(mapping.conceptCode),
+        ),
+      ),
+    );
+    return prisma;
+  }
+
+  function enabledService(prisma: any, today = '2026-11-24') {
+    const service = new PayrollService(prisma, terminationEnabled);
+    jest
+      .spyOn(service as any, 'operationalPaymentDate')
+      .mockReturnValue(new Date(`${today}T12:00:00.000Z`));
+    return service;
+  }
+
+  const dto = {
+    endDate: '2026-10-31',
+    terminationReason: PayrollTerminationReason.MUTUAL_AGREEMENT,
+  };
+
+  it('keeps definitive confirmation blocked while the feature flag is off', async () => {
+    const prisma = settlementPrisma();
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.createContractSettlement(businessId, contractId, dto),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.postContractSettlement(businessId, 'settlement-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.payrollContractSettlement.create).not.toHaveBeenCalled();
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirmation before the effective end date but still simulates it', async () => {
+    const prisma = settlementPrisma();
+    const service = enabledService(prisma);
+
+    await expect(
+      service.createContractSettlement(businessId, contractId, {
+        ...dto,
+        endDate: '2026-11-25',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.payrollContractSettlement.create).not.toHaveBeenCalled();
+    const preview: any = await service.simulateContractSettlement(
+      businessId,
+      contractId,
+      { endDate: '2027-03-15' },
+    );
+    expect(preview.preview).toBe(true);
+  });
+
+  it('requires a note for OTHER and rejects end dates before the start date', async () => {
+    const service = enabledService(settlementPrisma());
+
+    await expect(
+      service.createContractSettlement(businessId, contractId, {
+        endDate: '2026-10-31',
+        terminationReason: PayrollTerminationReason.OTHER,
+        terminationNote: '   ',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createContractSettlement(businessId, contractId, {
+        ...dto,
+        endDate: '2025-12-31',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requires the final payroll of the termination period before excluding the employee', async () => {
+    const prisma = settlementPrisma();
+    prisma.payrollRun.findFirst.mockResolvedValue(null);
+    const service = enabledService(prisma);
+
+    await expect(
+      service.createContractSettlement(businessId, contractId, dto),
+    ).rejects.toMatchObject({
+      response: { code: 'FINAL_PAYROLL_REQUIRED' },
+    });
+    expect(prisma.payrollRun.findFirst).toHaveBeenCalledWith({
+      where: {
+        businessId,
+        contractId,
+        period: { year: 2026, month: 10, paymentCycle: 'MONTHLY' },
+      },
+      select: { id: true },
+    });
+    expect(prisma.employee.update).not.toHaveBeenCalled();
+  });
+
+  it('produces identical amounts, lines and movements for every termination reason', async () => {
+    const outputs: string[] = [];
+    for (const reason of Object.values(PayrollTerminationReason)) {
+      const prisma = settlementPrisma();
+      const service = enabledService(prisma);
+      const result: any = await service.createContractSettlement(
+        businessId,
+        contractId,
+        {
+          ...dto,
+          terminationReason: reason,
+          terminationNote: reason === 'OTHER' ? 'Cierre de sede' : undefined,
+        },
+      );
+      expect(result.terminationReason).toBe(reason);
+      outputs.push(
+        JSON.stringify({
+          total: String(result.totalAmount),
+          lines: result.lines.map((line: any) => [line.code, String(line.amount)]),
+          movements: prisma.accountingMovement.createMany.mock.calls[0][0].data.map(
+            (movement: any) => [
+              movement.pucCuentaCode ?? movement.pucSubcuentaId,
+              movement.nature,
+              String(movement.amount),
+            ],
+          ),
+        }),
+      );
+    }
+    expect(new Set(outputs).size).toBe(1);
+  });
+
+  it('archives the employee in the same transaction as the settlement', async () => {
+    const prisma = settlementPrisma();
+    const service = enabledService(prisma);
+
+    await service.createContractSettlement(businessId, contractId, dto);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.employeeContract.update).toHaveBeenCalledWith({
+      where: { id: contractId },
+      data: { endDate: new Date('2026-10-31T00:00:00.000Z'), isActive: false },
+    });
+    expect(prisma.employee.update).toHaveBeenCalledWith({
+      where: { id: employeeId },
+      data: { isActive: false },
+    });
+  });
+
+  it('maps a concurrent unique violation to a duplicate-settlement conflict', async () => {
+    const prisma = settlementPrisma();
+    prisma.payrollContractSettlement.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    const service = enabledService(prisma);
+
+    await expect(
+      service.createContractSettlement(businessId, contractId, dto),
+    ).rejects.toThrow('Contract already has a real settlement');
+  });
+
+  it('blocks inactivating a contract with payroll history outside the termination flow', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue(defaultContract());
+    prisma.payrollRun.count.mockResolvedValue(3);
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.deleteContract(businessId, contractId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateContract(businessId, contractId, { isActive: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.employeeContract.update).not.toHaveBeenCalled();
+  });
+
+  it('still inactivates a contract without payroll history', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue(defaultContract());
+    const service = new PayrollService(prisma as any);
+
+    await expect(service.deleteContract(businessId, contractId)).resolves.toEqual(
+      { ok: true },
+    );
+  });
+
+  it('rejects contract end dates before the start date', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue(defaultContract());
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.updateContract(businessId, contractId, { endDate: '2025-12-31' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createContract(businessId, employeeId, {
+        contractType: PayrollContractType.INDEFINITE,
+        salaryMonthly: 3_000_000,
+        startDate: '2026-05-01',
+        endDate: '2026-04-30',
+        paymentCycle: PayrollPaymentCycle.MONTHLY,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('blocks archiving an employee whose latest contract has unsettled payroll', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: contractId });
+    prisma.payrollRun.count.mockResolvedValue(2);
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.deleteEmployee(businessId, employeeId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.employee.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete an employee record with history and reports why', async () => {
+    const prisma = withRecordDeletionMocks(createPrismaMock());
+    prisma.payrollEvent.count.mockResolvedValue(1);
+    prisma.accountingMovement.count.mockResolvedValue(2);
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.deleteEmployeeRecord(businessId, employeeId),
+    ).rejects.toMatchObject({
+      response: { code: 'EMPLOYEE_HAS_HISTORY' },
+    });
+    expect(prisma.employee.delete).not.toHaveBeenCalled();
+    expect(prisma.employeeContract.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('scopes the deletion check and the record lock to the business', async () => {
+    const prisma = withRecordDeletionMocks(createPrismaMock());
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([]);
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.deleteEmployeeRecord('other-business', employeeId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    const sql = prisma.$queryRaw.mock.calls[0];
+    expect(sql.slice(1)).toEqual([employeeId, 'other-business']);
+    expect(prisma.employee.delete).not.toHaveBeenCalled();
   });
 });

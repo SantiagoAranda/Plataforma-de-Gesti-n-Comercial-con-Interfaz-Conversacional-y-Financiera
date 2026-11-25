@@ -1,10 +1,14 @@
 import {
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
+  IsString,
+  MaxLength,
   Min,
 } from 'class-validator';
+import { PayrollTerminationReason } from '@prisma/client';
 
 export class CreateContractSettlementDto {
   @IsDateString()
@@ -19,4 +23,13 @@ export class CreateContractSettlementDto {
   @IsNumber()
   @Min(0)
   salaryConceptsAmount?: number;
+
+  /** Informative only: never changes amounts, concepts or accounting. */
+  @IsEnum(PayrollTerminationReason)
+  terminationReason: PayrollTerminationReason;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  terminationNote?: string;
 }

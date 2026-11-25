@@ -239,6 +239,28 @@ export type Settlement = {
   lines?: Array<{ code: string; name: string; amount: MoneyLike }>;
   usedParameters?: Record<string, unknown>;
   preview?: boolean;
+  type?: "REAL_TERMINATION" | "SIMULATION_TO_DATE" | string;
+  status?: "DRAFT" | "CALCULATED" | "POSTED" | "CANCELLED" | string;
+  postedAt?: string | null;
+  terminationReason?: PayrollTerminationReason | null;
+  terminationNote?: string | null;
+  employee?: Pick<Employee, "id" | "firstName" | "lastName" | "documentNumber" | "position">;
+  contract?: Pick<Contract, "id" | "startDate" | "endDate" | "isActive">;
+};
+
+/** Informative only: never changes settlement amounts or concepts. */
+export type PayrollTerminationReason =
+  | "CONTRACT_EXPIRATION"
+  | "VOLUNTARY_RESIGNATION"
+  | "EMPLOYER_TERMINATION"
+  | "MUTUAL_AGREEMENT"
+  | "OTHER";
+
+export type EmployeeDeletionCheck = {
+  employeeId: string;
+  contractsCount: number;
+  canDelete: boolean;
+  checks: Array<{ code: string; label: string; count: number }>;
 };
 
 export type PayrollBenefitPayment = {
@@ -347,6 +369,8 @@ export type CreateSettlementPayload = {
   endDate: string;
   calculationYear?: number;
   salaryConceptsAmount?: number;
+  terminationReason: PayrollTerminationReason;
+  terminationNote?: string;
 };
 
 export type UpdatePayrollPaymentStatusPayload = {
@@ -492,6 +516,9 @@ export const payrollApi = {
     return payrollRequest<{ ok: boolean }>(`/payroll/employees/${employeeId}`, {
       method: "DELETE",
     });
+  },
+  getEmployeeDeletionCheck(employeeId: string) {
+    return payrollRequest<EmployeeDeletionCheck>(`/payroll/employees/${employeeId}/deletion-check`);
   },
   hardDeleteEmployee(employeeId: string) {
     return payrollRequest<{ ok: boolean }>(`/payroll/employees/${employeeId}/hard`, {
@@ -670,8 +697,9 @@ export const payrollApi = {
       body: JSON.stringify({ status }),
     });
   },
-  listSettlements() {
-    return payrollRequest<Settlement[]>("/payroll/settlements");
+  listSettlements(query: { employeeId?: string } = {}) {
+    const qs = query.employeeId ? `?employeeId=${encodeURIComponent(query.employeeId)}` : "";
+    return payrollRequest<Settlement[]>(`/payroll/settlements${qs}`);
   },
   getSettlement(id: string) {
     return payrollRequest<Settlement>(`/payroll/settlements/${id}`);

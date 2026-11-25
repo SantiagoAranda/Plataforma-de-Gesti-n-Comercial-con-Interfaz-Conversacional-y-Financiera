@@ -23,7 +23,8 @@ export function PayrollChatActionBar({
 }: Props) {
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-[80] px-3 py-3 lg:left-[408px] lg:right-0"
+      // Hidden (not just covered) while any modal is open, restored when it closes.
+      className="fixed inset-x-0 bottom-0 z-[80] px-3 py-3 lg:left-[408px] lg:right-0 [body:has([data-modal-open])_&]:hidden"
       style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
     >
       <div className="mx-auto w-full max-w-3xl">

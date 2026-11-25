@@ -21,6 +21,11 @@ export class FeatureFlagsService {
   readonly simpleRegimeTaxModuleEnabled: boolean;
   /** @deprecated Use simpleRegimeSalesEnabled. */
   readonly simpleRegimeEnabled: boolean;
+  /**
+   * Definitive contract termination (real settlement + accounting). Off until the
+   * duplicated-provision accounting risk is resolved or explicitly accepted.
+   */
+  readonly payrollContractTerminationEnabled: boolean;
 
   constructor(private readonly config: ConfigService) {
     const salesFlag = this.config.get<string>('SIMPLE_REGIME_SALES_ENABLED');
@@ -33,6 +38,9 @@ export class FeatureFlagsService {
       this.config.get<string>('SIMPLE_REGIME_TAX_MODULE_ENABLED'),
     );
     this.simpleRegimeEnabled = this.simpleRegimeSalesEnabled;
+    this.payrollContractTerminationEnabled = parseBooleanFlag(
+      this.config.get<string>('PAYROLL_CONTRACT_TERMINATION_ENABLED'),
+    );
   }
 
   isSimpleRegimeSalesEnabled() {

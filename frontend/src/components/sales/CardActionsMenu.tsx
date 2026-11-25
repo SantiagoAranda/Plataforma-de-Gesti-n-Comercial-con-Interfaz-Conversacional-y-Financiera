@@ -15,8 +15,8 @@ export function menuPosition(anchor: { left: number; right: number; top: number;
 }
 
 /** Same card menu styling, portaled so card overflow and fixed bars cannot clip it. */
-export default function CardActionsMenu({ open, onOpenChange, children }: {
-  open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode;
+export default function CardActionsMenu({ open, onOpenChange, children, triggerLabel = 'Opciones de venta', menuLabel = 'Acciones de venta' }: {
+  open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode; triggerLabel?: string; menuLabel?: string;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -48,11 +48,11 @@ export default function CardActionsMenu({ open, onOpenChange, children }: {
     return () => document.removeEventListener('pointerdown', outside);
   }, [open, onOpenChange]);
   return <>
-    <button ref={trigger} type="button" aria-label="Opciones de venta" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+    <button ref={trigger} type="button" aria-label={triggerLabel} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={event => { event.stopPropagation(); onOpenChange(!open); }} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-slate-500 hover:bg-slate-50 focus-visible:outline-sky-600">
       <MoreVertical className="h-4 w-4" />
     </button>
-    {open && createPortal(<div ref={panel} id={id} role="dialog" aria-label="Acciones de venta" style={position}
+    {open && createPortal(<div ref={panel} id={id} role="dialog" aria-label={menuLabel} style={position}
       className="fixed z-[80] w-64 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-y-auto rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl"
       onClick={event => event.stopPropagation()}
       onKeyDown={event => {

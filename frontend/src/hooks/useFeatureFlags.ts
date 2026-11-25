@@ -4,6 +4,7 @@ import { getFeatureFlags } from "@/src/lib/featureFlags";
 export function useFeatureFlags() {
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [simpleRegimeTaxModuleEnabled, setSimpleRegimeTaxModuleEnabled] = useState(false);
+  const [payrollContractTerminationEnabled, setPayrollContractTerminationEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,6 +17,7 @@ export function useFeatureFlags() {
               (flags.simpleRegimeSalesEnabled === undefined && flags.simpleRegimeEnabled === true),
           );
           setSimpleRegimeTaxModuleEnabled(flags.simpleRegimeTaxModuleEnabled === true);
+          setPayrollContractTerminationEnabled(flags.payrollContractTerminationEnabled === true);
         }
       })
       .catch(() => {
@@ -35,6 +37,7 @@ export function useFeatureFlags() {
   return {
     simpleRegimeSalesEnabled,
     simpleRegimeTaxModuleEnabled,
+    payrollContractTerminationEnabled,
     /** @deprecated Use simpleRegimeSalesEnabled. */
     simpleRegimeEnabled: simpleRegimeSalesEnabled,
     featureFlagsLoading: loading,

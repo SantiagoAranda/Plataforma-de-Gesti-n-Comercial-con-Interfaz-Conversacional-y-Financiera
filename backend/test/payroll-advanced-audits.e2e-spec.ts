@@ -275,6 +275,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
         contractId,
         {
           endDate: '2026-03-31',
+          terminationReason: 'CONTRACT_EXPIRATION',
         },
       );
 
